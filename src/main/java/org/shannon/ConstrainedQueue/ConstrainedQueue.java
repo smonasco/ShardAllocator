@@ -1,11 +1,13 @@
 package org.shannon.ConstrainedQueue;
 
 import java.io.Closeable;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * A ConstrainedQueue is a queue with constraints around what can be released downstream.
@@ -71,7 +73,7 @@ public class ConstrainedQueue<T> implements BlockingQueue<T>, Closeable {
     if (open) {
       open = false;
       clear();
-      //oddly some BlockingQueues don't throw InterruptedException immediately if already interrupted
+      //oddly some BlockingQueues don't throw InterruptedException if already interrupted
       while(!jamClearer.isInterrupted()) {
         jamClearer.interrupt();
         try {
@@ -108,12 +110,12 @@ public class ConstrainedQueue<T> implements BlockingQueue<T>, Closeable {
 
   @Override
   public T poll() {
-    return delegate.poll();
+    return forget(delegate.poll());
   }
 
   @Override
   public T remove() {
-    return delegate.remove();
+    return forget(delegate.remove());
   }
 
   @Override
@@ -144,23 +146,26 @@ public class ConstrainedQueue<T> implements BlockingQueue<T>, Closeable {
 
   @Override
   public Iterator<T> iterator() {
-    return delegate.iterator();
+    return new QueueIterator();
   }
 
   @Override
   public boolean removeAll(Collection<?> collection) {
-    return 
-        constrainer.removeAll(collection)
-        | delegate.removeAll(collection)
-        | trafficJam.removeAll(collection);
+    boolean retval = false;
+    for (Object o : collection) {
+      retval |= remove(o);
+    }
+    return retval;
   }
 
+  /**
+   * Not implemented
+   * 
+   * Just drop this and create a new one
+   */
   @Override
   public boolean retainAll(Collection<?> collection) {
-    return
-        constrainer.retainAll(collection)
-        | delegate.retainAll(collection)
-        | trafficJam.retainAll(collection);
+    throw new UnsupportedOperationException("retainAll() is not implemented");
   }
 
   @Override
@@ -171,26 +176,29 @@ public class ConstrainedQueue<T> implements BlockingQueue<T>, Closeable {
         + trafficJam.size();
   }
 
-  /**
-   * Not implemented
-   */
   @Override
   public Object[] toArray() {
-    throw new UnsupportedOperationException("toArray() is not implemented");
+    ArrayList<T> array = new ArrayList<T>();
+    drainTo(array);
+    return array.toArray();
   }
 
-  /**
-   * Not implemented
-   */
+  @SuppressWarnings("unchecked")
   @Override
   public <J> J[] toArray(J[] arg0) {
-    throw new UnsupportedOperationException("toArray([]) is not implemented");
+    ArrayList<J> array = new ArrayList<J>();
+    drainTo((Collection<? super T>) array);
+    return array.toArray(arg0);
   }
-
+ 
   @Override
   public boolean add(T t) {
-    if (!constrainer.constrained(t)) {
-      add(t);
+    try {
+      if (!constrainer.constrained(t, 0, TimeUnit.MILLISECONDS)) {
+        delegate.add(t);
+      }
+    } catch (InterruptedException | TimeoutException e) {
+      throw new IllegalStateException();
     }
     return true;
   }
@@ -204,41 +212,55 @@ public class ConstrainedQueue<T> implements BlockingQueue<T>, Closeable {
   }
 
   @Override
-  public int drainTo(Collection<? super T> collection) {
-    return delegate.drainTo(collection);
+  public int drainTo(Collection<? super T> c) {
+    return drainTo(c, Integer.MAX_VALUE);
   }
 
   @Override
   public int drainTo(Collection<? super T> c, int maxElements) {
-    return delegate.drainTo(c, maxElements);
+    T t;
+    int count = 0;
+    while((t = poll()) != null && count < maxElements) {
+      c.add(t);
+      ++count;
+    }
+    return count;
   }
 
-  /**
-   * Always returns true and may have to block in entering Constrainer.
-   */
   @Override
   public boolean offer(T t) {
-    if (!constrainer.constrained(t)) {
-      if(!delegate.offer(t)) {
-        trafficJam.offer(t);
+    try {
+      if (!constrainer.constrained(t, 0, TimeUnit.MILLISECONDS)) {
+        if(!delegate.offer(t)) {
+          trafficJam.offer(t);
+        }
       }
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      return false;
+    } catch (Exception e) {
+      return false;
     }
     return true;
   }
 
   @Override
   public boolean offer(T t, long time, TimeUnit unit) throws InterruptedException {
-    if(!constrainer.constrained(t, time, unit)) {
-      if (!delegate.offer(t)) {
-        trafficJam.offer(t);
+    try {
+      if(!constrainer.constrained(t, time, unit)) {
+        if (!delegate.offer(t)) {
+          trafficJam.offer(t);
+        }
       }
+    } catch (TimeoutException e) {
+      return false;
     }
     return true;
   }
 
   @Override
   public T poll(long timeout, TimeUnit unit) throws InterruptedException {
-    return delegate.poll(timeout, unit);
+    return forget(delegate.poll(timeout, unit));
   }
 
   @Override
@@ -254,17 +276,31 @@ public class ConstrainedQueue<T> implements BlockingQueue<T>, Closeable {
     return (int) Math.min(retval, Integer.MAX_VALUE);
   }
 
+  @SuppressWarnings("unchecked")
   @Override
   public boolean remove(Object o) {
-    return
-        constrainer.remove(o)
-        | trafficJam.remove(o)
-        | delegate.remove(o);
+    boolean retval = false;
+    if (trafficJam.remove(o)) { constrainer.notifyReleased((T)o); retval = true; }
+    if (delegate.remove(o)) { constrainer.notifyReleased((T)o); retval = true; }
+    return retval | constrainer.remove(o);
   }
 
   @Override
   public T take() throws InterruptedException {
-    return delegate.take();
+    return forget(delegate.take());
   }
 
+  private class QueueIterator implements Iterator<T> {
+
+    @Override
+    public boolean hasNext() {
+      return !isEmpty();
+    }
+
+    @Override
+    public T next() {
+      return poll();
+    }
+    
+  }
 }

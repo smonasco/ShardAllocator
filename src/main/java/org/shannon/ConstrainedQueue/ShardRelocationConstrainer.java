@@ -101,20 +101,10 @@ public class ShardRelocationConstrainer<Node, Shard> implements Constrainer<Shar
     keysToRemove.forEach((node) -> { waitLists.remove(node); } );
     return retval;
   }
-  
-  @Override
-  public synchronized boolean removeAll(Collection<?> c) {
-    return modifyAllWaitLists((set) -> { return set.removeAll(c); } );
-  }
-
+ 
   @Override
   public boolean remove(Object o) {
     return modifyAllWaitLists((set) -> { return set.remove(o); });
-  }
-
-  @Override
-  public boolean retainAll(Collection<?> c) {
-    return modifyAllWaitLists((set) -> { return set.retainAll(c); });
   }
 
   @Override
