@@ -25,7 +25,7 @@ import java.util.concurrent.TimeoutException;
  * then items may back up in an internal Queue when items leaving the delegate cause items to be unconstrained but
  * cannot yet enter the delegate.
  * 
- * forget must be called after work is done.  The idea of a constrained queue is to control how many things are out
+ * forget() must be called after work is done.  The idea of a constrained queue is to control how many things are out
  * in the wild and so a feedback as to what can be forgotten about must occur.
  * 
  * @author Shannon
@@ -45,7 +45,7 @@ public class ConstrainedQueue<T> implements BlockingQueue<T>, Closeable {
     this.delegate = delegate;
     jamClearer = startClearingJams();
   }
-  
+ 
   private Thread startClearingJams() {
     Thread retval = new Thread(() -> {
       while(true) {
@@ -74,7 +74,7 @@ public class ConstrainedQueue<T> implements BlockingQueue<T>, Closeable {
       open = false;
       clear();
       //oddly some BlockingQueues don't throw InterruptedException if already interrupted
-      while(!jamClearer.isInterrupted()) {
+      while(!jamClearer.isAlive()) {
         jamClearer.interrupt();
         try {
           jamClearer.join(1); //Should be near immediate
@@ -85,6 +85,12 @@ public class ConstrainedQueue<T> implements BlockingQueue<T>, Closeable {
     }
   }
   
+  /**
+   * Once items are to be considered no longer a constraint.  This should be called
+   * 
+   * @param forgotten That which needs to be forgotten
+   * @return  Item given for chaining or some such
+   */
   public T forget(T forgotten) {
     if (forgotten != null) {
       for(T unconstrained : constrainer.notifyReleased(forgotten)) {
@@ -110,12 +116,12 @@ public class ConstrainedQueue<T> implements BlockingQueue<T>, Closeable {
 
   @Override
   public T poll() {
-    return forget(delegate.poll());
+    return delegate.poll();
   }
 
   @Override
   public T remove() {
-    return forget(delegate.remove());
+    return delegate.remove();
   }
 
   @Override
@@ -220,7 +226,7 @@ public class ConstrainedQueue<T> implements BlockingQueue<T>, Closeable {
   public int drainTo(Collection<? super T> c, int maxElements) {
     T t;
     int count = 0;
-    while((t = poll()) != null && count < maxElements) {
+    while((t = forget(poll())) != null && count < maxElements) {
       c.add(t);
       ++count;
     }
@@ -260,7 +266,7 @@ public class ConstrainedQueue<T> implements BlockingQueue<T>, Closeable {
 
   @Override
   public T poll(long timeout, TimeUnit unit) throws InterruptedException {
-    return forget(delegate.poll(timeout, unit));
+    return delegate.poll(timeout, unit);
   }
 
   @Override
@@ -280,14 +286,14 @@ public class ConstrainedQueue<T> implements BlockingQueue<T>, Closeable {
   @Override
   public boolean remove(Object o) {
     boolean retval = false;
-    if (trafficJam.remove(o)) { constrainer.notifyReleased((T)o); retval = true; }
-    if (delegate.remove(o)) { constrainer.notifyReleased((T)o); retval = true; }
+    if (trafficJam.remove(o)) { forget((T)o); retval = true; }
+    if (delegate.remove(o)) { forget((T)o); retval = true; }
     return retval | constrainer.remove(o);
   }
 
   @Override
   public T take() throws InterruptedException {
-    return forget(delegate.take());
+    return delegate.take();
   }
 
   private class QueueIterator implements Iterator<T> {
@@ -299,7 +305,7 @@ public class ConstrainedQueue<T> implements BlockingQueue<T>, Closeable {
 
     @Override
     public T next() {
-      return poll();
+      return ConstrainedQueue.this.remove();
     }
     
   }

@@ -20,43 +20,51 @@ public class CardinalityConstrainer<T> implements Constrainer<T> {
   private final ArrayBlockingQueue<T> constrained;
   private AtomicInteger released = new AtomicInteger(0);
   private final int maxReleased;
-  
+ 
   public CardinalityConstrainer(int maxConstrained, int maxReleased) {
-    this.constrained = new ArrayBlockingQueue<T>(maxConstrained);
+    this.constrained = new ArrayBlockingQueue<T>(maxConstrained, true);
     this.maxReleased = maxReleased;
   }  
   
   private boolean constrained() {
-    return released.getAndUpdate((i) -> { return i < maxReleased ? ++i : i; }) < maxReleased;
+    return !(released.getAndUpdate((i) -> { return i < maxReleased ? ++i : i; }) < maxReleased);
   }
   
   @Override
   public boolean constrained(T t) throws InterruptedException {
     if (constrained()) {
-      return false;
-    } else {
       constrained.put(t);
       return true;
+    } else {      
+      return false;
     }
   }
 
   @Override
   public boolean constrained(T t, long time, TimeUnit unit) throws InterruptedException, TimeoutException {
     if (constrained()) {
-      return false;
-    } else {
       if (!constrained.offer(t, time, unit)) {
         throw new TimeoutException();
       }
       return true;
+    } else {
+      return false;
     }
   }
 
   @Override
   public Iterable<T> notifyReleased(T t) {
     released.decrementAndGet();
+    //calling constrained increments released in order to give us the right to release
     if(!constrained()) {
-      return Arrays.asList(constrained.poll());
+      //however if we have nothing to release we ought to decrement
+      T val = constrained.poll();
+      if (val == null) {
+        released.decrementAndGet();
+        return Collections.emptyList();
+      } else {
+        return Arrays.asList(val);
+      }
     } else {
       return Collections.emptyList();
     }
