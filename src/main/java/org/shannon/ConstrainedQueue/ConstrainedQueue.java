@@ -214,7 +214,7 @@ public class ConstrainedQueue<T> implements BlockingQueue<T>, Closeable {
     return
         delegate.contains(o)
         || trafficJam.contains(o)
-        || constrainer.contains(0);
+        || constrainer.contains(o);
   }
 
   @Override
@@ -226,7 +226,7 @@ public class ConstrainedQueue<T> implements BlockingQueue<T>, Closeable {
   public int drainTo(Collection<? super T> c, int maxElements) {
     T t;
     int count = 0;
-    while((t = forget(poll())) != null && count < maxElements) {
+    while(count < maxElements && (t = forget(poll())) != null) {
       c.add(t);
       ++count;
     }
@@ -285,10 +285,9 @@ public class ConstrainedQueue<T> implements BlockingQueue<T>, Closeable {
   @SuppressWarnings("unchecked")
   @Override
   public boolean remove(Object o) {
-    boolean retval = false;
-    if (trafficJam.remove(o)) { forget((T)o); retval = true; }
-    if (delegate.remove(o)) { forget((T)o); retval = true; }
-    return retval | constrainer.remove(o);
+    if (trafficJam.remove(o)) { forget((T)o); return true; }
+    if (delegate.remove(o)) { forget((T)o); return true; }
+    return constrainer.remove(o);
   }
 
   @Override

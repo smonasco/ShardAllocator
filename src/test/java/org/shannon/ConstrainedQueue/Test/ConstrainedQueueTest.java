@@ -8,6 +8,8 @@ import java.util.NoSuchElementException;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.junit.Test;
@@ -28,13 +30,15 @@ public class ConstrainedQueueTest {
         , new ArrayBlockingQueue<Integer>(1));
   }
   
-  private <T extends Throwable> void expectException(String message, Class<T> type, ExceptionalActor<T> actor) {
+  private <T extends Throwable> void expectException(String message, Class<T> type, ExceptionalActor<Throwable> actor) {
     Throwable t = null;
     try {
       actor.act();
     } catch (Throwable e) {
       if (e.getClass() == type) {
         t = e;
+      } else {
+        System.out.println("Excepted " + type + " but got " + e.toString());
       }
     }
     assertNotNull(message, t);
@@ -206,4 +210,197 @@ public class ConstrainedQueueTest {
     q.close();
   } 
   
+  @Test
+  public void toArray() {
+    ConstrainedQueue<Integer> q = smallQueue();
+    assertTrue("Should be able to addAll.", q.addAll(Arrays.asList(0, 1, 2)));
+    int i = 0;
+    for(Object j : q.toArray()) {
+      assertEquals("Should have the right number.", new Integer(i++), (Integer)j);
+    }
+    assertEquals("Should have iterated 3 times", new Integer(3), new Integer(i));
+    assertTrue("Queue should be empty.", q.isEmpty());
+    assertNull("Should return null when empty", q.poll());
+    q.close();
+  }
+  
+  @Test
+  public void toArray2() {
+    ConstrainedQueue<Integer> q = smallQueue();
+    assertTrue("Should be able to addAll.", q.addAll(Arrays.asList(0, 1, 2)));    
+    Integer[] a = new Integer[3];
+    int i = 0;
+    for(Integer j : q.toArray(a)) {
+      assertEquals("Should have the right number.", new Integer(i++), (Integer)j);
+    }
+    i = 0;
+    //should have fit in a
+    for(Integer j : a) {
+      assertEquals("Should have the right number.", new Integer(i++), (Integer)j);
+    }
+    assertEquals("Should have iterated 3 times", new Integer(3), new Integer(i));
+    assertTrue("Queue should be empty.", q.isEmpty());
+    assertNull("Should return null when empty", q.poll());
+    q.close();
+  }
+  
+  @Test
+  public void add() {
+    ConstrainedQueue<Integer> q = new ConstrainedQueue<Integer>(new CardinalityConstrainer<Integer>(4, 1)
+        , new ArrayBlockingQueue<Integer>(1));
+    doNTimes(5, () -> { assertTrue("Should be able to call add", q.add(0)); });
+    expectException("Should throw IllegalStateException if full", IllegalStateException.class, () -> { q.add(0); });
+    doNTimes(5, () -> { assertEquals("Should be able to get what I put in", new Integer(0), q.forget(q.poll())); });
+    assertTrue("Queue should be empty.", q.isEmpty());
+    assertNull("Should return null when empty", q.poll());
+    q.close();
+  }
+  
+  @Test
+  public void contains() {
+    ConstrainedQueue<Integer> q = smallQueue();
+    assertTrue("Should be able to addAll.", q.addAll(Arrays.asList(0, 1, 2)));
+    for(int i = 0; i < 3; ++i) {
+      assertTrue("Should contain what I put in", q.contains(i));
+    }
+    q.close();
+  }
+  
+  @Test
+  public void drainTo() {
+    ConstrainedQueue<Integer> q = smallQueue();
+    assertTrue("Should be able to addAll.", q.addAll(Arrays.asList(0, 1, 2)));
+    ArrayList<Integer> a = new ArrayList<Integer>();
+    assertEquals("Should drain everything.", new Integer(3), new Integer(q.drainTo(a)));
+    assertTrue("Queue should be empty.", q.isEmpty());
+    assertNull("Should return null when empty", q.poll());
+    int i = 0;
+    for(Object j : a) {
+      assertEquals("Should have the right number.", new Integer(i++), (Integer)j);
+    }
+    assertEquals("Should have iterated 3 times", new Integer(3), new Integer(i));
+    q.close();
+  }
+  
+  @Test
+  public void drainTo2() {
+    ConstrainedQueue<Integer> q = smallQueue();
+    assertTrue("Should be able to addAll.", q.addAll(Arrays.asList(0, 1, 2)));
+    ArrayList<Integer> a = new ArrayList<Integer>();
+    assertEquals("Should drain the number I asked for.", new Integer(2), new Integer(q.drainTo(a, 2)));
+    assertEquals("Should have 1 more in queue", new Integer(2), q.forget(q.poll()));
+    assertTrue("Queue should be empty.", q.isEmpty());
+    assertNull("Should return null when empty", q.poll());
+    int i = 0;
+    for(Object j : a) {
+      assertEquals("Should have the right number.", new Integer(i++), (Integer)j);
+    }
+    assertEquals("Should have iterated 2 times", new Integer(2), new Integer(i));
+    q.close();
+  }
+  
+  @Test
+  public void offer() {
+    ConstrainedQueue<Integer> q = new ConstrainedQueue<Integer>(new CardinalityConstrainer<Integer>(4, 1)
+        , new ArrayBlockingQueue<Integer>(1));
+    doNTimes(5, () -> { assertTrue("Should be able to call add", q.offer(0)); });
+    assertFalse("Should return false when full", q.offer(0));
+    doNTimes(5, () -> { assertEquals("Should be able to get what I put in", new Integer(0), q.forget(q.poll())); });
+    assertTrue("Queue should be empty.", q.isEmpty());
+    assertNull("Should return null when empty", q.poll());
+    q.close();
+  }
+  
+  @Test
+  public void offer2() throws InterruptedException {
+    ConstrainedQueue<Integer> q = new ConstrainedQueue<Integer>(new CardinalityConstrainer<Integer>(4, 1)
+        , new ArrayBlockingQueue<Integer>(1));
+    doNTimes(5, () -> { assertTrue("Should be able to call add", q.offer(0, 1, TimeUnit.MILLISECONDS)); });
+    assertFalse("Should return false when full", q.offer(0, 1, TimeUnit.MILLISECONDS));
+    doNTimes(5, () -> { assertEquals("Should be able to get what I put in", new Integer(0), q.forget(q.poll())); });
+    assertTrue("Queue should be empty.", q.isEmpty());
+    assertNull("Should return null when empty", q.poll());
+    q.close();
+  }
+  
+  @Test
+  public void poll2() throws InterruptedException {
+    ConstrainedQueue<Integer> q = smallQueue();
+    assertTrue("Should be able to offer.", q.offer(0));
+    assertEquals("Should see get what put in.", new Integer(0), q.forget(q.poll(1, TimeUnit.MILLISECONDS)));
+    assertNull("Should return null when empty", q.poll(1, TimeUnit.MILLISECONDS));
+    q.close();
+  }
+  
+  @Test
+  public void put() throws InterruptedException, ExecutionException, TimeoutException {
+    ConstrainedQueue<Integer> q = new ConstrainedQueue<Integer>(new CardinalityConstrainer<Integer>(4, 1)
+        , new ArrayBlockingQueue<Integer>(1));
+    doNTimes(5, () -> { q.put(0); });
+    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> { 
+      try {
+        q.put(0);
+      } catch (InterruptedException e) {
+        e.printStackTrace();
+      } 
+    });
+    expectException("Should timeout waiting for future.", TimeoutException.class
+        , () -> { future.get(100, TimeUnit.MILLISECONDS); });
+    assertEquals("Should be able to get what I put in", new Integer(0), q.forget(q.poll()));
+    future.get(10, TimeUnit.MILLISECONDS);
+    doNTimes(5, () -> { assertEquals("Should be able to get what I put in", new Integer(0), q.forget(q.poll())); });
+    assertTrue("Queue should be empty.", q.isEmpty());
+    assertNull("Should return null when empty", q.poll());
+    q.close();
+  }
+  
+  @Test
+  public void remainingCapacity() {
+    ConstrainedQueue<Integer> q = new ConstrainedQueue<Integer>(new CardinalityConstrainer<Integer>(4, 1)
+        , new ArrayBlockingQueue<Integer>(1));
+    for (int i = 0; i < 5; ++i) {
+      assertTrue("Should be able to offer.", q.offer(0));
+      assertEquals("RemainingCapacity should be a certain value", new Integer(4 - i), new Integer(q.remainingCapacity()));
+    }
+    for (int i = 0; i < 5; ++i) {
+      assertEquals("RemainingCapacity should be a certain value", new Integer(i), new Integer(q.remainingCapacity()));
+      assertEquals("Should be able to get what I put in", new Integer(0), q.forget(q.poll()));
+    }
+    assertTrue("Queue should be empty.", q.isEmpty());
+    assertNull("Should return null when empty", q.poll());
+    q.close();
+  }
+  
+  @Test
+  public void remove2() {
+    ConstrainedQueue<Integer> q = smallQueue();
+    doNTimes(5, () -> { assertTrue("Should be able to call add", q.offer(new Integer(0))); });
+    doNTimes(5, () -> { assertTrue("Should be able to remove what I added", q.remove(new Integer(0))); });
+    assertTrue("Queue should be empty.", q.isEmpty());
+    assertNull("Should return null when empty", q.poll());
+    q.close();
+  }
+  
+  @Test
+  public void take() throws InterruptedException, ExecutionException, TimeoutException {
+    ConstrainedQueue<Integer> q = new ConstrainedQueue<Integer>(new CardinalityConstrainer<Integer>(4, 1)
+        , new ArrayBlockingQueue<Integer>(1));
+    doNTimes(5, () -> { assertTrue("Should be able to call offer", q.offer(0)); });
+    doNTimes(5, () -> { assertEquals("Should be able to get what I put in", new Integer(0), q.forget(q.take())); });
+    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> { 
+      try {
+        q.forget(q.take());
+      } catch (InterruptedException e) {
+        e.printStackTrace();
+      } 
+    });
+    expectException("Should timeout waiting for future.", TimeoutException.class
+        , () -> { future.get(100, TimeUnit.MILLISECONDS); });
+    assertTrue("Should be able to call offer", q.offer(0));
+    future.get(10, TimeUnit.MILLISECONDS);
+    assertTrue("Queue should be empty.", q.isEmpty());
+    assertNull("Should return null when empty", q.poll());
+    q.close();
+  }
+
 }

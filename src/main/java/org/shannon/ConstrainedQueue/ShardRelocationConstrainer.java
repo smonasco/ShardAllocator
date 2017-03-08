@@ -120,7 +120,6 @@ public class ShardRelocationConstrainer<Node, Shard> implements Constrainer<Shar
   @Override
   public int remainingCapacity() {
     return Integer.MAX_VALUE;
-  }
-  
+  }  
 
 }
