@@ -22,7 +22,7 @@ public class ShardRelocationConstrainer<Node, Shard> implements Constrainer<Shar
   }
   
   private synchronized boolean constrained(Node n, ShardRelocation<Node, Shard> e) {
-    Integer activeCount = activeCounts.getOrDefault(e.getFromNode(), 0);
+    Integer activeCount = activeCounts.getOrDefault(n, 0);
     if (activeCount == maxThreadsPerNode) {
       waitLists.put(n, e);
       return true;
@@ -71,7 +71,7 @@ public class ShardRelocationConstrainer<Node, Shard> implements Constrainer<Shar
   }
   
   @Override
-  public synchronized Iterable<ShardRelocation<Node, Shard>> notifyReleased(ShardRelocation<Node, Shard> e) {
+  public synchronized Collection<ShardRelocation<Node, Shard>> notifyReleased(ShardRelocation<Node, Shard> e) {
     ArrayList<ShardRelocation<Node, Shard>> retval = new ArrayList<ShardRelocation<Node, Shard>>();
     release(e.getFromNode(), retval);
     release(e.getToNode(), retval);

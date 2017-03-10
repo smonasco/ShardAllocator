@@ -1,6 +1,7 @@
 package org.shannon.ConstrainedQueue;
 
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -53,7 +54,7 @@ public class CardinalityConstrainer<T> implements Constrainer<T> {
   }
 
   @Override
-  public Iterable<T> notifyReleased(T t) {
+  public Collection<T> notifyReleased(T t) {
     released.decrementAndGet();
     //calling constrained increments released in order to give us the right to release
     if(!constrained()) {

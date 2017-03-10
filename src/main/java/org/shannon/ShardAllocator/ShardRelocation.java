@@ -50,4 +50,39 @@ public class ShardRelocation<Node, Shard> {
   public Shard getShard() {
     return shard;
   }
+  
+  private boolean eq(Object l, Object r) {
+    return (l == null && r == null) || l.equals(r);
+  }
+  
+  @Override
+  public boolean equals(Object o) {
+    return o instanceof ShardRelocation<?, ?>
+      && equals((ShardRelocation<?, ?>)o);
+  }
+  
+  public boolean equals(ShardRelocation<?, ?> o) {
+    return eq(o.fromNode, fromNode)
+        && eq(o.toNode, toNode)
+        && o.shard.equals(shard);
+  }
+  
+  private int hc(Object o) {
+    return o == null ? 0 : o.hashCode();
+  }
+  
+  @Override
+  public int hashCode() {
+    return hc(fromNode) ^ hc(toNode) ^ shard.hashCode();
+  }
+  
+  private String toStringJSON(Object o) {
+    return o == null ? "NULL" : String.format("\"%s\"", o);
+  }
+  
+  @Override
+  public String toString() {
+    return String.format("{ \"fromNode\": %s, \"toNode\": %s, \"shard\": %s }"
+        , toStringJSON(fromNode), toStringJSON(toNode), toStringJSON(shard));
+  }
 }

@@ -1,5 +1,6 @@
 package org.shannon.ConstrainedQueue;
 
+import java.util.Collection;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
@@ -19,7 +20,7 @@ public interface Constrainer<T> {
    * @param t The object leaving the queue.
    * @return  All objects unconstrained by the released object.
    */
-  public Iterable<T> notifyReleased(T t);
+  public Collection<T> notifyReleased(T t);
   /**
    * Notification that the queue is going down and we can forget everything
    */
