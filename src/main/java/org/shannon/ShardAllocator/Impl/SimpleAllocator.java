@@ -50,8 +50,8 @@ public final class SimpleAllocator<Node, Shard> implements ShardAllocator<Node, 
   
   public SimpleAllocator(Collection<Node> nodes, Collection<Shard> shards, Map<Node, Collection<Shard>> distribution
       , DistributionDiscoverer<Node, Shard> distDiscoverer, ShardRelocator<Node, Shard> relocator, int relocatingThreadsPerNode) {
-    Preconditions.checkNotNull(nodes, "If you have no nodes, shards cannot be allocated");
-    Preconditions.checkNotNull(shards, "If you have no shards, then shards cannot be allocated");
+    Preconditions.checkArgument(nodes != null  && !nodes.isEmpty(), "If you have no nodes, shards cannot be allocated");
+    Preconditions.checkArgument(shards != null  && !shards.isEmpty(), "If you have no shards, then shards cannot be allocated");
     nodeUniverse = ImmutableSet.copyOf(nodes);
     shardUniverse = ImmutableSet.copyOf(shards);
     this.distribution = distribution == null ? new HashMap<Node, HashSet<Shard>>() : deepEnoughClone(distribution);

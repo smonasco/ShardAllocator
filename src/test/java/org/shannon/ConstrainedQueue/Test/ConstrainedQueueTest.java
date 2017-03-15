@@ -16,6 +16,7 @@ import org.junit.Test;
 import org.shannon.ConstrainedQueue.CardinalityConstrainer;
 import org.shannon.ConstrainedQueue.ConstrainedQueue;
 import org.shannon.function.ExceptionalActor;
+import static org.shannon.util.JUnitHelper.*;
 
 public class ConstrainedQueueTest {
     
@@ -28,20 +29,6 @@ public class ConstrainedQueueTest {
   private ConstrainedQueue<Integer> smallQueue() {
     return new ConstrainedQueue<Integer>(new CardinalityConstrainer<Integer>(5000, 1)
         , new ArrayBlockingQueue<Integer>(1));
-  }
-  
-  private <T extends Throwable> void expectException(String message, Class<T> type, ExceptionalActor<Throwable> actor) {
-    Throwable t = null;
-    try {
-      actor.act();
-    } catch (Throwable e) {
-      if (e.getClass() == type) {
-        t = e;
-      } else {
-        System.out.println("Excepted " + type + " but got " + e.toString());
-      }
-    }
-    assertNotNull(message, t);
   }
   
   @Test

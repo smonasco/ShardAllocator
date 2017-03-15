@@ -22,9 +22,14 @@ public interface Constrainer<T> {
    */
   public Collection<T> notifyReleased(T t);
   /**
-   * Notification that the queue is going down and we can forget everything
+   * Forget everything
    */
   public void clear();
+  /**
+   * Check if anything is being restrained/held back
+   * 
+   * @return if anything is currently being held back
+   */
   public boolean isEmpty();
   public boolean remove(Object o);
   public int size();

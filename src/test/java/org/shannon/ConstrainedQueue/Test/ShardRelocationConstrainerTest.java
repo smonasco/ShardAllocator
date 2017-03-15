@@ -101,4 +101,81 @@ public class ShardRelocationConstrainerTest {
     assertEquals("Should release so many", new Integer(1), new Integer(released.size()));
     assertTrue("Should release the one I expect", released.remove(sr(0, 2)));
   }
+  
+  @Test
+  public void clear() {
+    ShardRelocationConstrainer<Integer, Integer> c = src(1);
+    assertFalse("First entry shouldn't be constrained", c.constrained(sr(0, 1)));
+    assertTrue("Repeat should be constrained", c.constrained(sr(0, 2)));
+    c.clear();
+    Collection<ShardRelocation<Integer, Integer>> released = c.notifyReleased(sr(0, 1));
+    assertEquals("Should release none", new Integer(0), new Integer(released.size()));
+    assertFalse("First entry shouldn't be constrained", c.constrained(sr(0, 1)));
+    assertTrue("Repeat should be constrained", c.constrained(sr(0, 2)));
+  }
+  
+  @Test
+  public void isEmpty() {
+    ShardRelocationConstrainer<Integer, Integer> c = src(1);
+    assertTrue("Should be empty at start", c.isEmpty());
+    assertFalse("First entry shouldn't be constrained", c.constrained(sr(0, 1)));
+    assertTrue("Should still be empty", c.isEmpty());
+    assertTrue("Repeat should be constrained", c.constrained(sr(0, 2)));
+    assertFalse("Should no longer be empty", c.isEmpty());
+    c.clear();
+    assertTrue("Should be empty again", c.isEmpty());
+    assertFalse("First entry shouldn't be constrained", c.constrained(sr(0, 1)));
+    assertTrue("Should still be empty", c.isEmpty());
+    assertTrue("Repeat should be constrained", c.constrained(sr(0, 2)));
+    assertFalse("Should no longer be empty", c.isEmpty());
+  }
+  
+  @Test
+  public void remove() {
+    ShardRelocationConstrainer<Integer, Integer> c = src(1);
+    assertFalse("First entry shouldn't be constrained", c.constrained(sr(0, 1)));
+    assertFalse("Shouldn't have anything that can be removed", c.remove(sr(0, 1)));
+    assertTrue("Repeat should be constrained", c.constrained(sr(0, 2)));
+    assertFalse("Still shouldn't be able to remove first in", c.remove(sr(0, 1)));
+    assertTrue("Should be able to remove what's constrained.", c.remove(sr(0, 2)));
+    assertTrue("Should be empty now", c.isEmpty());
+  }
+  
+  @Test
+  public void size() {
+    ShardRelocationConstrainer<Integer, Integer> c = src(1);
+    assertEquals("Should be empty", new Integer(0), new Integer(c.size()));
+    assertFalse("First entry shouldn't be constrained", c.constrained(sr(0, 1)));
+    assertEquals("Should still be empty", new Integer(0), new Integer(c.size()));
+    assertTrue("Repeat should be constrained", c.constrained(sr(0, 2)));
+    assertEquals("Should have so many", new Integer(1), new Integer(c.size()));
+    assertTrue("Repeat should be constrained", c.constrained(sr(0, 3)));
+    assertEquals("Should have so many", new Integer(2), new Integer(c.size()));
+    assertEquals("Should release one", new Integer(1), new Integer(c.notifyReleased(sr(0, 1)).size()));
+    assertEquals("Should have so many", new Integer(1), new Integer(c.size()));
+    assertEquals("Should release one", new Integer(1), new Integer(c.notifyReleased(sr(0, 2)).size()));
+    assertEquals("Should still be empty", new Integer(0), new Integer(c.size()));
+  }
+  
+  @Test
+  public void contains() {
+    ShardRelocationConstrainer<Integer, Integer> c = src(1);
+    assertFalse("First entry shouldn't be constrained", c.constrained(sr(0, 1)));
+    assertFalse("Shouldn't have unconstrained", c.contains(sr(0, 1)));
+    assertTrue("Repeat should be constrained", c.constrained(sr(0, 2)));
+    assertFalse("Still shouldn't have unconstrained", c.contains(sr(0, 1)));
+    assertTrue("Should be have what's constrained.", c.contains(sr(0, 2)));    
+  }
+  
+  @Test
+  public void remainingCapacity() {
+    ShardRelocationConstrainer<Integer, Integer> c = src(1);
+    assertEquals("Should have the same capacity forever", Integer.MAX_VALUE, c.remainingCapacity());
+    assertFalse("First entry shouldn't be constrained", c.constrained(sr(0, 1)));
+    assertEquals("Should have the same capacity forever", Integer.MAX_VALUE, c.remainingCapacity());
+    assertTrue("Repeat should be constrained", c.constrained(sr(0, 2)));
+    assertEquals("Should have the same capacity forever", Integer.MAX_VALUE, c.remainingCapacity());
+    assertEquals("Should release one", new Integer(1), new Integer(c.notifyReleased(sr(0, 1)).size()));
+    assertEquals("Should have the same capacity forever", Integer.MAX_VALUE, c.remainingCapacity());    
+  }
 }
