@@ -16,9 +16,9 @@ import org.junit.Test;
 import org.shannon.ConstrainedQueue.CardinalityConstrainer;
 import org.shannon.ConstrainedQueue.ConstrainedQueue;
 import org.shannon.function.ExceptionalActor;
-import static org.shannon.util.JUnitHelper.*;
+import org.shannon.util.TestClass;
 
-public class ConstrainedQueueTest {
+public class ConstrainedQueueTest extends TestClass {
     
   private static <T extends Throwable> void doNTimes(int n, ExceptionalActor<T> actor) throws T {
     for(;--n != -1;) {

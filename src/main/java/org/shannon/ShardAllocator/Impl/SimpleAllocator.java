@@ -7,6 +7,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.SortedSet;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -25,6 +26,7 @@ import org.shannon.ShardAllocator.ShardRelocator;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Ordering;
+import com.google.common.collect.Sets;
 import com.google.common.collect.TreeMultimap;
 
 /**
@@ -48,6 +50,7 @@ public final class SimpleAllocator<Node, Shard> implements ShardAllocator<Node, 
   private final ShardRelocator<Node, Shard> relocator;
   private final DistributionDiscoverer<Node, Shard> distDiscoverer;
   
+  //TODO: Once we add SplitBrain resolution this becomes too cumbersome. We can go multiple ways. Builder pattern or globbing params into objects
   public SimpleAllocator(Collection<Node> nodes, Collection<Shard> shards, Map<Node, Collection<Shard>> distribution
       , DistributionDiscoverer<Node, Shard> distDiscoverer, ShardRelocator<Node, Shard> relocator, int relocatingThreadsPerNode) {
     Preconditions.checkArgument(nodes != null  && !nodes.isEmpty(), "If you have no nodes, shards cannot be allocated");
@@ -74,8 +77,8 @@ public final class SimpleAllocator<Node, Shard> implements ShardAllocator<Node, 
     relocationJob = parentExecutor.submit(() -> {
       ArrayList<Future<?>> futures = new ArrayList<Future<?>>();
       final ConstrainedQueue<ShardRelocation<Node, Shard>> moves = determineMoves();
-      ExecutorService threadPool = Executors.newFixedThreadPool(nodeUniverse.size() * maxThreadsPerNode);
       if(!moves.isEmpty() && !Thread.interrupted()) {
+        ExecutorService threadPool = Executors.newFixedThreadPool(nodeUniverse.size() * maxThreadsPerNode);
         try {
           while (!moves.isEmpty()) {
             final ShardRelocation<Node, Shard> move = moves.take();
@@ -107,15 +110,10 @@ public final class SimpleAllocator<Node, Shard> implements ShardAllocator<Node, 
   
   private TreeMultimap<Integer, Node> nodesByCount() {
     TreeMultimap<Integer, Node> retval = TreeMultimap.create(Ordering.natural(), Ordering.arbitrary());
-    ArrayList<Node> leavers = new ArrayList<Node>();
     for(Entry<Node, HashSet<Shard>> entry : distribution.entrySet()) {
-      if (nodeUniverse.contains(entry.getKey())) {
-        retval.put(entry.getValue().size(), entry.getKey());
-      } else {
-        leavers.add(entry.getKey());
-      }
+      retval.put(entry.getValue().size(), entry.getKey());
     }
-    leavers.forEach((node) -> { distribution.remove(node); });
+    Sets.difference(nodeUniverse, new HashSet<Node>(retval.values())).forEach((node) -> { retval.put(0, node); });
     return retval;
   }
   
@@ -131,15 +129,15 @@ public final class SimpleAllocator<Node, Shard> implements ShardAllocator<Node, 
   
   private void assignToLeast(Shard shard, TreeMultimap<Integer, Node> nodesByCount, ConstrainedQueue<ShardRelocation<Node, Shard>> moves
       , Map.Entry<Integer, Node> fromEntry) {
-    Map.Entry<Integer, Node> lastEntry = getLast(nodesByCount);
-    moves.add(new ShardRelocation<Node, Shard>(fromEntry == null ? null : fromEntry.getValue(), lastEntry.getValue(), shard));
+    Map.Entry<Integer, Node> leastEntry = getFirst(nodesByCount);
+    moves.add(new ShardRelocation<Node, Shard>(fromEntry == null ? null : fromEntry.getValue(), leastEntry.getValue(), shard));
     if (fromEntry != null) {
       nodesByCount.remove(fromEntry.getKey(), fromEntry.getValue());
       nodesByCount.put(fromEntry.getKey() - 1, fromEntry.getValue());
       distribution.remove(fromEntry.getValue(), shard);
     }
-    nodesByCount.remove(fromEntry.getKey(), fromEntry.getValue());
-    nodesByCount.put(fromEntry.getKey() - 1, fromEntry.getValue());
+    nodesByCount.remove(leastEntry.getKey(), leastEntry.getValue());
+    nodesByCount.put(leastEntry.getKey() + 1, leastEntry.getValue());
   }
   
   private void allShardsAccountedFor(ConstrainedQueue<ShardRelocation<Node, Shard>> moves, TreeMultimap<Integer, Node> nodesByCount) {
@@ -158,6 +156,26 @@ public final class SimpleAllocator<Node, Shard> implements ShardAllocator<Node, 
     }
   }
   
+  private void fillInMissingNodes() {
+    for (Node node : Sets.difference(nodeUniverse, distribution.keySet())) {
+      distribution.put(node, new HashSet<Shard>());
+    }
+  }
+  
+  private void removeLeavers(ConstrainedQueue<ShardRelocation<Node, Shard>> moves, TreeMultimap<Integer, Node> nodesByCount) {
+    HashSet<Node> leavingNodes = new HashSet<Node>();
+    for (Map.Entry<Node, HashSet<Shard>> entry : distribution.entrySet()) {
+      if (nodeUniverse.contains(entry.getKey())) {
+        for (Shard shard : Sets.difference(entry.getValue(), shardUniverse)) {
+          moves.add(new ShardRelocation<Node, Shard>(entry.getKey(), null, shard));
+        }
+      } else {
+        leavingNodes.add(entry.getKey());
+      }
+    }
+    leavingNodes.forEach((node) -> { distribution.remove(node); });
+  }
+  
   private ConstrainedQueue<ShardRelocation<Node, Shard>> determineMoves() {
     ConstrainedQueue<ShardRelocation<Node, Shard>> moves = new ConstrainedQueue<ShardRelocation<Node, Shard>>(
       new ShardRelocationConstrainer<Node, Shard>(maxThreadsPerNode),
@@ -167,7 +185,10 @@ public final class SimpleAllocator<Node, Shard> implements ShardAllocator<Node, 
     int cMean = (int) Math.ceil(mean);
     int fMean = (int) Math.floor(mean);
     
+    //TODO: SplitBrain resolution.
+    fillInMissingNodes();
     TreeMultimap<Integer, Node> nodesByCount = nodesByCount();
+    removeLeavers(moves, nodesByCount);
     allShardsAccountedFor(moves, nodesByCount);
     allNodesEven(moves, nodesByCount, cMean, fMean);
     return moves;
@@ -186,12 +207,20 @@ public final class SimpleAllocator<Node, Shard> implements ShardAllocator<Node, 
   }
 
   @Override
+  public void notifyDistributionChaing(Map<Node, Collection<Shard>> distribution) {
+    this.distribution = distribution == null ? new HashMap<Node, HashSet<Shard>>() : deepEnoughClone(distribution);
+    allocateAsync();
+  }
+  
+  @Override
   public void close() {
-    relocationJob.cancel(true);
-    try {
-      relocationJob.get();
-    } catch (InterruptedException | ExecutionException e) {
-      //TODO: logging and assume done.
+    if (!relocationJob.isDone()) {
+      relocationJob.cancel(true);
+      try {
+        relocationJob.get();
+      } catch (InterruptedException | ExecutionException | CancellationException e) {
+        //TODO: logging and assume done.
+      }
     }
   }
 }
