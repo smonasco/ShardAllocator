@@ -2,7 +2,9 @@ package org.shannon.ShardAllocator.test;
 
 import org.apache.commons.collections4.multimap.HashSetValuedHashMap;
 import org.junit.Test;
+import org.shannon.ShardAllocator.ShardRelocation;
 import org.shannon.ShardAllocator.Impl.SimpleAllocator;
+import org.shannon.ShardAllocator.mock.SimpleAllocatorWrapper;
 import org.shannon.util.TestClass;
 
 import static org.junit.Assert.*;
@@ -13,9 +15,10 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class SimpleAllocatorTest extends TestClass {
-
+  
   private static HashSet<Integer> integers(int from, int to) {
     HashSet<Integer> retval = new HashSet<Integer>();
     for(int i = from; i <= to; ++i) {
@@ -39,6 +42,31 @@ public class SimpleAllocatorTest extends TestClass {
     Integer[] counts = new Integer[nodeCount];
     Arrays.fill(counts, loadCount);
     return dist(counts);
+  }
+  
+  private void relocate(HashSetValuedHashMap<Integer, Integer> dist, ShardRelocation<Integer, Integer> relocation) {
+    if (relocation.getFromNode() != null) { dist.removeMapping(relocation.getFromNode(), relocation.getShard()); }
+    if (relocation.getToNode() != null) { dist.put(relocation.getToNode(), relocation.getShard()); }
+  }
+  
+  private void isBalanced(SimpleAllocatorWrapper w) {
+    double mean = (double)w.shards.size() / (double) w.nodes.size();
+    int fmean = (int) Math.floor(mean);
+    int cmean = (int) Math.ceil(mean);
+    
+    assertEquals("Should have allocations for every node", w.nodes.size(), w.dist.keySet().size());
+    int cmeanCount = 0;
+    int fmeanCount = 0;
+    for(Collection<Integer> shards : w.dist.asMap().values()) {
+      if (shards.size() == fmean) { //if cmean == fmean then we end up in this bucket
+        ++fmeanCount; 
+      } else {
+        assertEquals("Can only be ceiling of floor of the mean shards per node", cmean, shards.size());
+        ++cmeanCount;
+      }
+    }
+    assertEquals("Should have remainder count of over allocated", w.shards.size() % w.nodes.size(), cmeanCount);
+    assertEquals("All others should have the floor of the mean", w.nodes.size() - cmeanCount, fmeanCount);
   }
   
   @Test
@@ -67,54 +95,46 @@ public class SimpleAllocatorTest extends TestClass {
   
   @Test
   public void initialBalancingHappens() throws InterruptedException {
-    HashSet<Integer> nodes = integers(0,2);
-    HashSet<Integer> shards = integers(0,5);
-    Object sync = new Object();
-    HashSetValuedHashMap<Integer, Integer> dist = new HashSetValuedHashMap<Integer, Integer>();
-    
-    SimpleAllocator<Integer, Integer> allocator = new SimpleAllocator<Integer, Integer>(nodes, shards, null, () -> {
-      return dist.asMap();
-    }, (relocation) -> {
-      synchronized(sync) {
-        if (relocation.getFromNode() != null) { dist.removeMapping(relocation.getFromNode(), relocation.getShard()); }
-        if (relocation.getToNode() != null) { dist.put(relocation.getToNode(), relocation.getShard()); }
-      }
-    }, 3);
+    SimpleAllocatorWrapper w = new SimpleAllocatorWrapper(integers(0,2), integers(0,5)
+        , new HashSetValuedHashMap<Integer, Integer>());
     try {      
-      Thread.sleep(200);
-      assertEquals("Should have 3 nodes in distribution", 3, dist.keySet().size());
-      for(Integer node : nodes){
-        assertEquals("Should have 2 shards per node", 2, dist.get(node).size());
-      }
+      Thread.sleep(200);  //TODO: We could have an event when balanced
+      assertEquals("Should have 3 nodes in distribution", 3, w.dist.keySet().size());
+      isBalanced(w);
     } finally {
-      allocator.close();
+      w.close();
     }
   }
   
   @Test
   public void initialBalancingDoesNotHappen() throws InterruptedException {
-    SimpleAllocator<Integer, Integer> allocator = new SimpleAllocator<Integer, Integer>(
-      integers(0,2),
-      integers(0,8),
-      balancedDist(3,3).asMap(),
-      () -> { 
-        captureException(() -> {
-          fail("Should not call distribution discoverer.");
-        });
-        return null;
-      }, (relocation) -> {
-        captureException(() -> { fail("Shouldn't be trying to move."); });
-      }, 1      
-    );
+    SimpleAllocatorWrapper w = new SimpleAllocatorWrapper(integers(0,2), integers(0,8)
+        , balancedDist(3,3));
     try {
-      Thread.sleep(100);
+      Thread.sleep(200);
+      assertEquals("Shouldn't call distribution discoverer.", 0, w.discoveryCount.get());
+      assertEquals("Shouldn't call relocation", 0, w.moveCount.get());
+      isBalanced(w);
     } finally {
-      allocator.close();
+      w.close();
     }
   }
   
   @Test
-  public void laterBlancingHappens() {
-    //TODO
+  public void shouldBalanceOnNewShard() throws InterruptedException {
+    SimpleAllocatorWrapper w = new SimpleAllocatorWrapper(integers(0,2), integers(0,8)
+        , balancedDist(3,3));
+    try {
+      Thread.sleep(200);
+      assertEquals("Shouldn't call distribution discoverer.", 0, w.discoveryCount.get());
+      assertEquals("Shouldn't call relocation", 0, w.moveCount.get());
+      w.notifyShardChange(integers(0,9));
+      Thread.sleep(200);
+      assertEquals("Should call distribution discoverer once.", 1, w.discoveryCount.get());
+      assertEquals("Should have only one move", 1, w.moveCount.get());
+      isBalanced(w);
+    } finally {
+      w.close();
+    }
   }
 }

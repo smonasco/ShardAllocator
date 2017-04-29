@@ -17,7 +17,7 @@ public class TestClass {
     try {
       actor.act();
     } catch (Throwable e) {
-      if (e.getClass() == type) {
+      if (e.getClass().isAssignableFrom(type)) {
         t = e;
       } else {
         System.out.println("Excepted " + type + " but got " + e.toString());

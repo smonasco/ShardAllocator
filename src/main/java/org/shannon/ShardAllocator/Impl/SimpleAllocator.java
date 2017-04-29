@@ -195,13 +195,13 @@ public final class SimpleAllocator<Node, Shard> implements ShardAllocator<Node, 
   }
 
   @Override
-  public void notifyShardsChange(HashSet<Shard> shardUniverse) {
-    this.shardUniverse = ImmutableSet.copyOf(shardUniverse);
+  public void notifyShardsChange(Collection<Shard> shards) {
+    this.shardUniverse = ImmutableSet.copyOf(shards);
     allocateAsync();
   }
 
   @Override
-  public void notifyNodesChange(HashSet<Node> nodeUniverse) {
+  public void notifyNodesChange(Collection<Node> nodeUniverse) {
     this.nodeUniverse = ImmutableSet.copyOf(nodeUniverse);
     allocateAsync();    
   }
