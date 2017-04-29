@@ -2,6 +2,7 @@ package org.shannon.ShardAllocator.mock;
 
 import java.io.Closeable;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.commons.collections4.multimap.HashSetValuedHashMap;
@@ -50,6 +51,12 @@ public class SimpleAllocatorWrapper implements Closeable {
 
   public void close() {
     allocator.close();    
+  }
+
+  public void notifyNodeChange(Collection<Integer> nodes) {
+    this.nodes = nodes;
+    dist.keySet().retainAll(nodes);
+    allocator.notifyNodesChange(nodes);    
   }
   
 }

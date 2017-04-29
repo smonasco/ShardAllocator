@@ -22,13 +22,7 @@ public class ShardRelocationConstrainer<Node, Shard> implements Constrainer<Shar
   }
   
   private synchronized boolean constrained(Node n, ShardRelocation<Node, Shard> e) {
-    Integer activeCount = activeCounts.getOrDefault(n, 0);
-    if (activeCount == maxThreadsPerNode) {
-      waitLists.put(n, e);
-      return true;
-    } else {
-      return false;
-    }    
+    return activeCounts.getOrDefault(n, 0) == maxThreadsPerNode;
   }
   
   private synchronized void incrementActiveCount(Node n) {
@@ -46,6 +40,8 @@ public class ShardRelocationConstrainer<Node, Shard> implements Constrainer<Shar
       incrementActiveCount(e.getToNode());
       return false;
     } else {
+      waitLists.put(e.getFromNode(), e);
+      waitLists.put(e.getToNode(), e);
       return true;
     }
   }
@@ -54,17 +50,26 @@ public class ShardRelocationConstrainer<Node, Shard> implements Constrainer<Shar
   public boolean constrained(ShardRelocation<Node, Shard> e, long time, TimeUnit unit) {
     return constrained(e);  //If a lot of threads are calling this could block I guess, but...
   }
-
+  
+  private synchronized void remove(ShardRelocation<Node, Shard> relocation, Node node) {
+    Set<ShardRelocation<Node, Shard>> waitList = waitLists.get(node);
+    waitList.remove(relocation);
+    if (waitList.isEmpty()) {
+      waitLists.remove(node);
+    }
+  }
+  private synchronized void remove(ShardRelocation<Node, Shard> relocation) {
+    remove(relocation, relocation.getFromNode());
+    remove(relocation, relocation.getToNode());
+  }
+  
   private synchronized void release(Node n, ArrayList<ShardRelocation<Node, Shard>> released) {
     decrementActiveCount(n);
     Set<ShardRelocation<Node, Shard>> waitList = waitLists.get(n);
     for(ShardRelocation<Node, Shard> relocation : waitList) {
       if(!constrained(relocation)) {
         released.add(relocation);
-        waitList.remove(relocation);
-        if (waitList.isEmpty()) {
-          waitLists.remove(n);
-        }
+        remove(relocation);
         return;
       }
     }

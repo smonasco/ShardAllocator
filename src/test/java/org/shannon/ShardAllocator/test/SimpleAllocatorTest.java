@@ -2,7 +2,6 @@ package org.shannon.ShardAllocator.test;
 
 import org.apache.commons.collections4.multimap.HashSetValuedHashMap;
 import org.junit.Test;
-import org.shannon.ShardAllocator.ShardRelocation;
 import org.shannon.ShardAllocator.Impl.SimpleAllocator;
 import org.shannon.ShardAllocator.mock.SimpleAllocatorWrapper;
 import org.shannon.util.TestClass;
@@ -15,7 +14,6 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class SimpleAllocatorTest extends TestClass {
   
@@ -42,11 +40,6 @@ public class SimpleAllocatorTest extends TestClass {
     Integer[] counts = new Integer[nodeCount];
     Arrays.fill(counts, loadCount);
     return dist(counts);
-  }
-  
-  private void relocate(HashSetValuedHashMap<Integer, Integer> dist, ShardRelocation<Integer, Integer> relocation) {
-    if (relocation.getFromNode() != null) { dist.removeMapping(relocation.getFromNode(), relocation.getShard()); }
-    if (relocation.getToNode() != null) { dist.put(relocation.getToNode(), relocation.getShard()); }
   }
   
   private void isBalanced(SimpleAllocatorWrapper w) {
@@ -108,8 +101,7 @@ public class SimpleAllocatorTest extends TestClass {
   
   @Test
   public void initialBalancingDoesNotHappen() throws InterruptedException {
-    SimpleAllocatorWrapper w = new SimpleAllocatorWrapper(integers(0,2), integers(0,8)
-        , balancedDist(3,3));
+    SimpleAllocatorWrapper w = new SimpleAllocatorWrapper(integers(0,2), integers(0,8), balancedDist(3,3));
     try {
       Thread.sleep(200);
       assertEquals("Shouldn't call distribution discoverer.", 0, w.discoveryCount.get());
@@ -122,8 +114,7 @@ public class SimpleAllocatorTest extends TestClass {
   
   @Test
   public void shouldBalanceOnNewShard() throws InterruptedException {
-    SimpleAllocatorWrapper w = new SimpleAllocatorWrapper(integers(0,2), integers(0,8)
-        , balancedDist(3,3));
+    SimpleAllocatorWrapper w = new SimpleAllocatorWrapper(integers(0,2), integers(0,8), balancedDist(3,3));
     try {
       Thread.sleep(200);
       assertEquals("Shouldn't call distribution discoverer.", 0, w.discoveryCount.get());
@@ -132,6 +123,74 @@ public class SimpleAllocatorTest extends TestClass {
       Thread.sleep(200);
       assertEquals("Should call distribution discoverer once.", 1, w.discoveryCount.get());
       assertEquals("Should have only one move", 1, w.moveCount.get());
+      isBalanced(w);
+    } finally {
+      w.close();
+    }
+  }
+  
+  @Test
+  public void shouldBalanceOnLostShard() throws InterruptedException {
+    SimpleAllocatorWrapper w = new SimpleAllocatorWrapper(integers(0,2), integers(0,8), balancedDist(3,3));
+    try {
+      Thread.sleep(200);
+      assertEquals("Shouldn't call distribution discoverer.", 0, w.discoveryCount.get());
+      assertEquals("Shouldn't call relocation", 0, w.moveCount.get());
+      w.notifyShardChange(integers(0,7));
+      Thread.sleep(200);
+      assertEquals("Should call distribution discoverer once.", 1, w.discoveryCount.get());
+      assertEquals("Should have only one move", 1, w.moveCount.get());
+      isBalanced(w);
+    } finally {
+      w.close();
+    }
+  }
+  
+  @Test
+  public void shouldNotBalanceOnRepeatShard() throws InterruptedException {
+    SimpleAllocatorWrapper w = new SimpleAllocatorWrapper(integers(0,2), integers(0,8), balancedDist(3,3));
+    try {
+      Thread.sleep(200);
+      assertEquals("Shouldn't call distribution discoverer.", 0, w.discoveryCount.get());
+      assertEquals("Shouldn't call relocation", 0, w.moveCount.get());
+      w.notifyShardChange(integers(0,8));
+      Thread.sleep(200);
+      assertEquals("Shouldn't call distribution discoverer.", 0, w.discoveryCount.get());
+      assertEquals("Shouldn't call relocation", 0, w.moveCount.get());
+      isBalanced(w);
+    } finally {
+      w.close();
+    }
+  }
+  
+  @Test
+  public void shouldBalanceOnNewNode() throws InterruptedException {
+    SimpleAllocatorWrapper w = new SimpleAllocatorWrapper(integers(0,2), integers(0,8), balancedDist(3,3));
+    try {
+      Thread.sleep(200);
+      assertEquals("Shouldn't call distribution discoverer.", 0, w.discoveryCount.get());
+      assertEquals("Shouldn't call relocation", 0, w.moveCount.get());
+      w.notifyNodeChange(integers(0,3));
+      Thread.sleep(200);
+      assertEquals("Should call distribution discoverer once.", 1, w.discoveryCount.get());
+      assertEquals("Should have 2 moves", 2, w.moveCount.get());
+      isBalanced(w);
+    } finally {
+      w.close();
+    }
+  }
+  
+  @Test
+  public void shouldBalanceOnLostNode() throws InterruptedException {
+    SimpleAllocatorWrapper w = new SimpleAllocatorWrapper(integers(0,2), integers(0,8), balancedDist(3,3));
+    try {
+      Thread.sleep(200);
+      assertEquals("Shouldn't call distribution discoverer.", 0, w.discoveryCount.get());
+      assertEquals("Shouldn't call relocation", 0, w.moveCount.get());
+      w.notifyNodeChange(integers(0,1));
+      Thread.sleep(200);
+      assertEquals("Should call distribution discoverer once.", 1, w.discoveryCount.get());
+      assertEquals("Should have 3 moves", 3, w.moveCount.get());
       isBalanced(w);
     } finally {
       w.close();

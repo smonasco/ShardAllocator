@@ -162,7 +162,7 @@ public final class SimpleAllocator<Node, Shard> implements ShardAllocator<Node, 
     }
   }
   
-  private void removeLeavers(ConstrainedQueue<ShardRelocation<Node, Shard>> moves, TreeMultimap<Integer, Node> nodesByCount) {
+  private void removeLeavers(ConstrainedQueue<ShardRelocation<Node, Shard>> moves) {
     HashSet<Node> leavingNodes = new HashSet<Node>();
     for (Map.Entry<Node, HashSet<Shard>> entry : distribution.entrySet()) {
       if (nodeUniverse.contains(entry.getKey())) {
@@ -187,8 +187,8 @@ public final class SimpleAllocator<Node, Shard> implements ShardAllocator<Node, 
     
     //TODO: SplitBrain resolution.
     fillInMissingNodes();
+    removeLeavers(moves);
     TreeMultimap<Integer, Node> nodesByCount = nodesByCount();
-    removeLeavers(moves, nodesByCount);
     allShardsAccountedFor(moves, nodesByCount);
     allNodesEven(moves, nodesByCount, cMean, fMean);
     return moves;
