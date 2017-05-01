@@ -52,7 +52,7 @@ public class ShardRelocation<Node, Shard> {
   }
   
   private boolean eq(Object l, Object r) {
-    return (l == null && r == null) || l.equals(r);
+    return (l == null && r == null) || (l != null && l.equals(r));
   }
   
   @Override

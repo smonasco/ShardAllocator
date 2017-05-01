@@ -7,5 +7,6 @@ import java.util.Map;
 public interface ShardAllocator<Node, Shard> extends Closeable{
   public void notifyShardsChange(Collection<Shard> shardUniverse);
   public void notifyNodesChange(Collection<Node> nodeUniverse);
-  public void notifyDistributionChaing(Map<Node, Collection<Shard>> distribution);
+  public void notifyDistributionChange(Map<Node, Collection<Shard>> distribution);
+  public void awaitRebalance();
 }

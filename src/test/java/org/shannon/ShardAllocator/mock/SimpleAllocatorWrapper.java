@@ -1,5 +1,7 @@
 package org.shannon.ShardAllocator.mock;
 
+import static org.junit.Assert.assertEquals;
+
 import java.io.Closeable;
 import java.util.Collection;
 import java.util.HashSet;
@@ -11,7 +13,7 @@ import org.shannon.ShardAllocator.Impl.SimpleAllocator;
 
 public class SimpleAllocatorWrapper implements Closeable {
   private final SimpleAllocator<Integer, Integer> allocator;
-  public final HashSetValuedHashMap<Integer, Integer> dist;
+  public HashSetValuedHashMap<Integer, Integer> dist;
   public final AtomicInteger moveCount = new AtomicInteger(0);
   public final AtomicInteger discoveryCount = new AtomicInteger(0);
   public Collection<Integer> nodes;
@@ -32,13 +34,13 @@ public class SimpleAllocatorWrapper implements Closeable {
           return dist.asMap();
         }, (relocation) -> {
           synchronized(sync) {
-            relocate(dist, relocation);
+            relocate(relocation);
           }
         }, 1      
       );
   }
   
-  private void relocate(HashSetValuedHashMap<Integer, Integer> dist, ShardRelocation<Integer, Integer> relocation) {
+  private void relocate(ShardRelocation<Integer, Integer> relocation) {
     moveCount.incrementAndGet();
     if (relocation.getFromNode() != null) { dist.removeMapping(relocation.getFromNode(), relocation.getShard()); }
     if (relocation.getToNode() != null) { dist.put(relocation.getToNode(), relocation.getShard()); }
@@ -59,4 +61,37 @@ public class SimpleAllocatorWrapper implements Closeable {
     allocator.notifyNodesChange(nodes);    
   }
   
+  public void notifyDistributionChange(HashSetValuedHashMap<Integer, Integer> dist) {
+    this.dist = dist;
+    allocator.notifyDistributionChange(dist.asMap());
+  }
+
+  public void awaitRebalance() {
+    allocator.awaitRebalance();
+  }
+  
+  public void isBalanced() {
+    try {
+      double mean = (double)shards.size() / (double) nodes.size();
+      int fmean = (int) Math.floor(mean);
+      int cmean = (int) Math.ceil(mean);
+      
+      assertEquals("Should have allocations for every node", Math.min(nodes.size(), shards.size()), dist.keySet().size());
+      int cmeanCount = 0;
+      int fmeanCount = 0;
+      for(Collection<Integer> shards : dist.asMap().values()) {
+        if (shards.size() == fmean) { //if cmean == fmean then we end up in this bucket
+          ++fmeanCount; 
+        } else {
+          assertEquals("Can only be ceiling or floor of the mean shards per node", cmean, shards.size());
+          ++cmeanCount;
+        }
+      }
+      assertEquals("Should have remainder count of over allocated", shards.size() % nodes.size(), cmeanCount);
+      assertEquals("All others should have the floor of the mean", nodes.size() - cmeanCount, fmeanCount);
+    } catch(Throwable e) {
+      System.out.println(e);
+      throw e;
+    }
+  }
 }

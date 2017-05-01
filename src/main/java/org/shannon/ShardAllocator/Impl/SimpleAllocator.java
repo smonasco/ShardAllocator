@@ -72,6 +72,20 @@ public final class SimpleAllocator<Node, Shard> implements ShardAllocator<Node, 
     return retval;
   }
   
+  @Override
+  public void awaitRebalance() {
+    while(!relocationJob.isDone()) {
+      try {
+        relocationJob.get();
+      } catch (InterruptedException | CancellationException e) {
+        //Don't care just check again
+      } catch (ExecutionException e) {
+        // TODO Should never occur but record nonetheless
+        e.printStackTrace();
+      }
+    }
+  }
+  
   private synchronized void allocateAsync() {
     if (relocationJob != null) { relocationJob.cancel(true); }
     relocationJob = parentExecutor.submit(() -> {
@@ -168,6 +182,7 @@ public final class SimpleAllocator<Node, Shard> implements ShardAllocator<Node, 
       if (nodeUniverse.contains(entry.getKey())) {
         for (Shard shard : Sets.difference(entry.getValue(), shardUniverse)) {
           moves.add(new ShardRelocation<Node, Shard>(entry.getKey(), null, shard));
+          distribution.get(entry.getKey()).remove(shard);
         }
       } else {
         leavingNodes.add(entry.getKey());
@@ -207,7 +222,7 @@ public final class SimpleAllocator<Node, Shard> implements ShardAllocator<Node, 
   }
 
   @Override
-  public void notifyDistributionChaing(Map<Node, Collection<Shard>> distribution) {
+  public void notifyDistributionChange(Map<Node, Collection<Shard>> distribution) {
     this.distribution = distribution == null ? new HashMap<Node, HashSet<Shard>>() : deepEnoughClone(distribution);
     allocateAsync();
   }

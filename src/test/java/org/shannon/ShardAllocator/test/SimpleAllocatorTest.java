@@ -14,6 +14,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.Random;
 
 public class SimpleAllocatorTest extends TestClass {
   
@@ -40,26 +41,6 @@ public class SimpleAllocatorTest extends TestClass {
     Integer[] counts = new Integer[nodeCount];
     Arrays.fill(counts, loadCount);
     return dist(counts);
-  }
-  
-  private void isBalanced(SimpleAllocatorWrapper w) {
-    double mean = (double)w.shards.size() / (double) w.nodes.size();
-    int fmean = (int) Math.floor(mean);
-    int cmean = (int) Math.ceil(mean);
-    
-    assertEquals("Should have allocations for every node", w.nodes.size(), w.dist.keySet().size());
-    int cmeanCount = 0;
-    int fmeanCount = 0;
-    for(Collection<Integer> shards : w.dist.asMap().values()) {
-      if (shards.size() == fmean) { //if cmean == fmean then we end up in this bucket
-        ++fmeanCount; 
-      } else {
-        assertEquals("Can only be ceiling of floor of the mean shards per node", cmean, shards.size());
-        ++cmeanCount;
-      }
-    }
-    assertEquals("Should have remainder count of over allocated", w.shards.size() % w.nodes.size(), cmeanCount);
-    assertEquals("All others should have the floor of the mean", w.nodes.size() - cmeanCount, fmeanCount);
   }
   
   @Test
@@ -93,7 +74,7 @@ public class SimpleAllocatorTest extends TestClass {
     try {      
       Thread.sleep(200);  //TODO: We could have an event when balanced
       assertEquals("Should have 3 nodes in distribution", 3, w.dist.keySet().size());
-      isBalanced(w);
+      w.isBalanced();
     } finally {
       w.close();
     }
@@ -106,7 +87,7 @@ public class SimpleAllocatorTest extends TestClass {
       Thread.sleep(200);
       assertEquals("Shouldn't call distribution discoverer.", 0, w.discoveryCount.get());
       assertEquals("Shouldn't call relocation", 0, w.moveCount.get());
-      isBalanced(w);
+      w.isBalanced();
     } finally {
       w.close();
     }
@@ -123,7 +104,7 @@ public class SimpleAllocatorTest extends TestClass {
       Thread.sleep(200);
       assertEquals("Should call distribution discoverer once.", 1, w.discoveryCount.get());
       assertEquals("Should have only one move", 1, w.moveCount.get());
-      isBalanced(w);
+      w.isBalanced();
     } finally {
       w.close();
     }
@@ -140,7 +121,7 @@ public class SimpleAllocatorTest extends TestClass {
       Thread.sleep(200);
       assertEquals("Should call distribution discoverer once.", 1, w.discoveryCount.get());
       assertEquals("Should have only one move", 1, w.moveCount.get());
-      isBalanced(w);
+      w.isBalanced();
     } finally {
       w.close();
     }
@@ -157,7 +138,7 @@ public class SimpleAllocatorTest extends TestClass {
       Thread.sleep(200);
       assertEquals("Shouldn't call distribution discoverer.", 0, w.discoveryCount.get());
       assertEquals("Shouldn't call relocation", 0, w.moveCount.get());
-      isBalanced(w);
+      w.isBalanced();
     } finally {
       w.close();
     }
@@ -174,7 +155,7 @@ public class SimpleAllocatorTest extends TestClass {
       Thread.sleep(200);
       assertEquals("Should call distribution discoverer once.", 1, w.discoveryCount.get());
       assertEquals("Should have 2 moves", 2, w.moveCount.get());
-      isBalanced(w);
+      w.isBalanced();
     } finally {
       w.close();
     }
@@ -191,7 +172,91 @@ public class SimpleAllocatorTest extends TestClass {
       Thread.sleep(200);
       assertEquals("Should call distribution discoverer once.", 1, w.discoveryCount.get());
       assertEquals("Should have 3 moves", 3, w.moveCount.get());
-      isBalanced(w);
+      w.isBalanced();
+    } finally {
+      w.close();
+    }
+  }
+  
+  @Test
+  public void shouldNotBalanceOnRepeatNode() throws InterruptedException {
+    SimpleAllocatorWrapper w = new SimpleAllocatorWrapper(integers(0,2), integers(0,8), balancedDist(3,3));
+    try {
+      Thread.sleep(200);
+      assertEquals("Shouldn't call distribution discoverer.", 0, w.discoveryCount.get());
+      assertEquals("Shouldn't call relocation", 0, w.moveCount.get());
+      w.notifyNodeChange(integers(0,2));
+      Thread.sleep(200);
+      assertEquals("Shouldn't call distribution discoverer.", 0, w.discoveryCount.get());
+      assertEquals("Shouldn't call relocation", 0, w.moveCount.get());
+      w.isBalanced();
+    } finally {
+      w.close();
+    }
+  }
+  
+  @Test
+  public void shouldBalanceOnBadDistribution() throws InterruptedException {
+    SimpleAllocatorWrapper w = new SimpleAllocatorWrapper(integers(0,2), integers(0,8), balancedDist(3,3));
+    try {
+      Thread.sleep(200);
+      assertEquals("Shouldn't call distribution discoverer.", 0, w.discoveryCount.get());
+      assertEquals("Shouldn't call relocation", 0, w.moveCount.get());
+      w.notifyDistributionChange(dist(3,3,2));
+      Thread.sleep(200);
+      assertEquals("Should call distribution discoverer once.", 1, w.discoveryCount.get());
+      assertEquals("Should have 1 moves", 1, w.moveCount.get());
+      w.isBalanced();
+    } finally {
+      w.close();
+    }
+  }
+  
+  @Test
+  public void shouldNotBalanceOnGoodDistribution() throws InterruptedException {
+    SimpleAllocatorWrapper w = new SimpleAllocatorWrapper(integers(0,2), integers(0,8), balancedDist(3,3));
+    try {
+      Thread.sleep(200);
+      assertEquals("Shouldn't call distribution discoverer.", 0, w.discoveryCount.get());
+      assertEquals("Shouldn't call relocation", 0, w.moveCount.get());
+      w.notifyDistributionChange(balancedDist(3,3));
+      Thread.sleep(200);
+      assertEquals("Shouldn't call distribution discoverer.", 0, w.discoveryCount.get());
+      assertEquals("Shouldn't call relocation", 0, w.moveCount.get());
+      w.isBalanced();
+    } finally {
+      w.close();
+    }
+  }
+
+  @Test
+  public void shouldBalanceRandomness() throws InterruptedException {
+    Random rand = new Random();
+    SimpleAllocatorWrapper w = new SimpleAllocatorWrapper(integers(0,2), integers(0,8), balancedDist(3,3));
+    try {
+      w.awaitRebalance();
+      assertEquals("Shouldn't call distribution discoverer.", 0, w.discoveryCount.get());
+      assertEquals("Shouldn't call relocation", 0, w.moveCount.get());
+      for (int i = 0; i < 100; ++i) {
+        System.out.println("Random test " + i);
+        switch(rand.nextInt(3)) {
+          case 0:
+            w.notifyNodeChange(integers(0, rand.nextInt(100) + 1));
+            break;
+          case 1:
+            w.notifyShardChange(integers(0, rand.nextInt(10000) + 1));
+            break;
+          case 2:
+            ArrayList<Integer> counts = new ArrayList<Integer>();
+            for(@SuppressWarnings("unused") Integer j : integers(0, rand.nextInt(100))) {
+              counts.add(rand.nextInt(100));
+            }
+            w.notifyDistributionChange(dist(counts.toArray(new Integer[0])));
+            break;
+        }
+        w.awaitRebalance(); //Looking at a split brain resolution
+        w.isBalanced();
+      }
     } finally {
       w.close();
     }
