@@ -3,19 +3,25 @@ package org.shannon.ShardAllocator.mock;
 import static org.junit.Assert.assertEquals;
 
 import java.io.Closeable;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.commons.collections4.multimap.HashSetValuedHashMap;
 import org.shannon.ShardAllocator.ShardRelocation;
 import org.shannon.ShardAllocator.Impl.SimpleAllocator;
 
+import com.google.common.collect.Sets;
+import com.google.common.collect.TreeMultimap;
+
 public class SimpleAllocatorWrapper implements Closeable {
   private final SimpleAllocator<Integer, Integer> allocator;
   public HashSetValuedHashMap<Integer, Integer> dist;
   public final AtomicInteger moveCount = new AtomicInteger(0);
   public final AtomicInteger discoveryCount = new AtomicInteger(0);
+  public final AtomicInteger splitBrainCount = new AtomicInteger(0);
   public Collection<Integer> nodes;
   public Collection<Integer> shards;
   private final Object sync = new Object();
@@ -36,8 +42,26 @@ public class SimpleAllocatorWrapper implements Closeable {
           synchronized(sync) {
             relocate(relocation);
           }
-        }, 1      
+        }, (shard, myNodes, counts) -> {
+          splitBrainCount.incrementAndGet();
+          return resolveSplit(shard, myNodes, counts);
+        }, 1
       );
+  }
+  
+  private Collection<ShardRelocation<Integer, Integer>> resolveSplit(Integer shard, HashSet<Integer> myNodes
+      , TreeMultimap<Integer, Integer> counts) {
+    ArrayList<ShardRelocation<Integer, Integer>> moves = new ArrayList<ShardRelocation<Integer, Integer>>();
+    for (Collection<Integer> mostNodes : counts.asMap().descendingMap().values()) {
+      for (Integer node : Sets.union((Set<Integer>)(mostNodes), myNodes)) {
+        myNodes.remove(node);
+        moves.add(new ShardRelocation<Integer, Integer>(node, null, shard));
+        if (myNodes.size() == 1) {
+          return moves;
+        }
+      }
+    }
+    return moves;
   }
   
   private void relocate(ShardRelocation<Integer, Integer> relocation) {

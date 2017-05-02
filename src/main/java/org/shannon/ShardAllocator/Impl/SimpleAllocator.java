@@ -15,6 +15,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.commons.collections4.multimap.HashSetValuedHashMap;
 import org.apache.commons.lang3.tuple.Pair;
 import org.shannon.ConstrainedQueue.ConstrainedQueue;
 import org.shannon.ConstrainedQueue.ShardRelocationConstrainer;
@@ -22,6 +23,7 @@ import org.shannon.ShardAllocator.DistributionDiscoverer;
 import org.shannon.ShardAllocator.ShardAllocator;
 import org.shannon.ShardAllocator.ShardRelocation;
 import org.shannon.ShardAllocator.ShardRelocator;
+import org.shannon.ShardAllocator.SplitBrainResolver;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableSet;
@@ -49,18 +51,25 @@ public final class SimpleAllocator<Node, Shard> implements ShardAllocator<Node, 
   private Future<?> relocationJob;
   private final ShardRelocator<Node, Shard> relocator;
   private final DistributionDiscoverer<Node, Shard> distDiscoverer;
+  private final SplitBrainResolver<Node, Shard> splitBrainResolver;
+  private boolean balancing = false;
   
-  //TODO: Once we add SplitBrain resolution this becomes too cumbersome. We can go multiple ways. Builder pattern or globbing params into objects
+  //TODO: This is too cumbersome. We can go multiple ways. Builder pattern or globbing params into objects
   public SimpleAllocator(Collection<Node> nodes, Collection<Shard> shards, Map<Node, Collection<Shard>> distribution
-      , DistributionDiscoverer<Node, Shard> distDiscoverer, ShardRelocator<Node, Shard> relocator, int relocatingThreadsPerNode) {
+      , DistributionDiscoverer<Node, Shard> distDiscoverer, ShardRelocator<Node, Shard> relocator
+      , SplitBrainResolver<Node, Shard> splitBrainResolver, int relocatingThreadsPerNode) {
     Preconditions.checkArgument(nodes != null  && !nodes.isEmpty(), "If you have no nodes, shards cannot be allocated");
     Preconditions.checkArgument(shards != null  && !shards.isEmpty(), "If you have no shards, then shards cannot be allocated");
+    Preconditions.checkNotNull(distDiscoverer, "Must have a distDiscoverer");
+    Preconditions.checkNotNull(relocator, "Must have a relocator");
+    Preconditions.checkNotNull(splitBrainResolver, "Must have a splitBrainResolver");
     nodeUniverse = ImmutableSet.copyOf(nodes);
     shardUniverse = ImmutableSet.copyOf(shards);
     this.distribution = distribution == null ? new HashMap<Node, HashSet<Shard>>() : deepEnoughClone(distribution);
     this.maxThreadsPerNode = relocatingThreadsPerNode;
     this.distDiscoverer = distDiscoverer;
     this.relocator = relocator;
+    this.splitBrainResolver = splitBrainResolver;
     allocateAsync();
   }
 
@@ -74,7 +83,7 @@ public final class SimpleAllocator<Node, Shard> implements ShardAllocator<Node, 
   
   @Override
   public void awaitRebalance() {
-    while(!relocationJob.isDone()) {
+    while(!relocationJob.isDone() || balancing) {
       try {
         relocationJob.get();
       } catch (InterruptedException | CancellationException e) {
@@ -92,6 +101,7 @@ public final class SimpleAllocator<Node, Shard> implements ShardAllocator<Node, 
       ArrayList<Future<?>> futures = new ArrayList<Future<?>>();
       final ConstrainedQueue<ShardRelocation<Node, Shard>> moves = determineMoves();
       if(!moves.isEmpty() && !Thread.interrupted()) {
+        balancing = true;
         ExecutorService threadPool = Executors.newFixedThreadPool(nodeUniverse.size() * maxThreadsPerNode);
         try {
           while (!moves.isEmpty()) {
@@ -114,6 +124,8 @@ public final class SimpleAllocator<Node, Shard> implements ShardAllocator<Node, 
         }
         discoverDistribution();
         allocateAsync();
+      } else {
+        balancing = false;
       }
     });
   }
@@ -182,6 +194,7 @@ public final class SimpleAllocator<Node, Shard> implements ShardAllocator<Node, 
       if (nodeUniverse.contains(entry.getKey())) {
         for (Shard shard : Sets.difference(entry.getValue(), shardUniverse)) {
           moves.add(new ShardRelocation<Node, Shard>(entry.getKey(), null, shard));
+          This causes a concurrent modification Exception. Perform later Collect as callables.
           distribution.get(entry.getKey()).remove(shard);
         }
       } else {
@@ -189,6 +202,31 @@ public final class SimpleAllocator<Node, Shard> implements ShardAllocator<Node, 
       }
     }
     leavingNodes.forEach((node) -> { distribution.remove(node); });
+  }
+  
+  private boolean handleSplitBrain(ConstrainedQueue<ShardRelocation<Node, Shard>> moves
+      , TreeMultimap<Integer, Node> nodesByCount) {
+    boolean haveNewMoves = false;
+    
+    HashSetValuedHashMap<Shard, Node> nodesByShard = new HashSetValuedHashMap<Shard, Node>();
+    for(Map.Entry<Node, HashSet<Shard>> entry : distribution.entrySet()) {
+      for(Shard shard : entry.getValue()) {
+        nodesByShard.put(shard, entry.getKey());
+      }
+    }
+    
+    for(Map.Entry<Shard, Collection<Node>> entry : nodesByShard.asMap().entrySet()) {
+      if (entry.getValue().size() < 1) {
+        Collection<ShardRelocation<Node, Shard>> newMoves = 
+            splitBrainResolver.resolve(entry.getKey(), (HashSet<Node>)entry.getValue(), nodesByCount);
+        if (newMoves != null && !newMoves.isEmpty()) {
+          haveNewMoves = true;
+          moves.addAll(newMoves);
+        }
+      }
+    }
+    
+    return haveNewMoves;
   }
   
   private ConstrainedQueue<ShardRelocation<Node, Shard>> determineMoves() {
@@ -200,12 +238,15 @@ public final class SimpleAllocator<Node, Shard> implements ShardAllocator<Node, 
     int cMean = (int) Math.ceil(mean);
     int fMean = (int) Math.floor(mean);
     
-    //TODO: SplitBrain resolution.
     fillInMissingNodes();
     removeLeavers(moves);
     TreeMultimap<Integer, Node> nodesByCount = nodesByCount();
-    allShardsAccountedFor(moves, nodesByCount);
-    allNodesEven(moves, nodesByCount, cMean, fMean);
+    //If we call splitBrainResolver.resolve and it gives us moves
+    //then we should honor that and not reassign those shard(s)
+    if (!handleSplitBrain(moves, nodesByCount)) {
+      allShardsAccountedFor(moves, nodesByCount);
+      allNodesEven(moves, nodesByCount, cMean, fMean);
+    }    
     return moves;
   }
 

@@ -48,22 +48,44 @@ public class SimpleAllocatorTest extends TestClass {
     expectException("Nodes cannot be null", IllegalArgumentException.class
         , () -> { 
           new SimpleAllocator<Integer, Integer>((Collection<Integer>)null, Arrays.asList(0), (Map<Integer, Collection<Integer>>)null
-            , () -> { return new HashMap<Integer, Collection<Integer>>(); }, (move) -> { }, 1); 
+            , () -> { return new HashMap<Integer, Collection<Integer>>(); }, (move) -> { }
+            , (shard, nodes, count) -> { return null; }, 1); 
       });
     expectException("Nodes cannot be empty", IllegalArgumentException.class
         , () -> { 
           new SimpleAllocator<Integer, Integer>(new ArrayList<Integer>(), Arrays.asList(0), (Map<Integer, Collection<Integer>>)null
-            , () -> { return new HashMap<Integer, Collection<Integer>>(); }, (move) -> { }, 1); 
+            , () -> { return new HashMap<Integer, Collection<Integer>>(); }, (move) -> { }
+            , (shard, nodes, count) -> { return null; }, 1); 
       });
     expectException("Shards cannot be null", IllegalArgumentException.class
         , () -> { 
           new SimpleAllocator<Integer, Integer>(Arrays.asList(0), (Collection<Integer>)null, (Map<Integer, Collection<Integer>>)null
-            , () -> { return new HashMap<Integer, Collection<Integer>>(); }, (move) -> { }, 1); 
+            , () -> { return new HashMap<Integer, Collection<Integer>>(); }, (move) -> { }
+            , (shard, nodes, count) -> { return null; }, 1); 
       });
     expectException("Shards cannot be empty", IllegalArgumentException.class
         , () -> { 
           new SimpleAllocator<Integer, Integer>(Arrays.asList(0), new ArrayList<Integer>(), (Map<Integer, Collection<Integer>>)null
-            , () -> { return new HashMap<Integer, Collection<Integer>>(); }, (move) -> { }, 1); 
+            , () -> { return new HashMap<Integer, Collection<Integer>>(); }, (move) -> { }
+            , (shard, nodes, count) -> { return null; }, 1); 
+      });
+    expectException("Must have a distDiscoverer", IllegalArgumentException.class
+        , () -> { 
+          new SimpleAllocator<Integer, Integer>(Arrays.asList(0), new ArrayList<Integer>(), (Map<Integer, Collection<Integer>>)null
+            , null, (move) -> { }
+            , (shard, nodes, count) -> { return null; }, 1); 
+      });
+    expectException("Must have a relocator", IllegalArgumentException.class
+        , () -> { 
+          new SimpleAllocator<Integer, Integer>(Arrays.asList(0), new ArrayList<Integer>(), (Map<Integer, Collection<Integer>>)null
+            , () -> { return new HashMap<Integer, Collection<Integer>>(); }, null
+            , (shard, nodes, count) -> { return null; }, 1); 
+      });
+    expectException("Must have a splitBrainResolver", IllegalArgumentException.class
+        , () -> { 
+          new SimpleAllocator<Integer, Integer>(Arrays.asList(0), new ArrayList<Integer>(), (Map<Integer, Collection<Integer>>)null
+            , () -> { return new HashMap<Integer, Collection<Integer>>(); }, (move) -> { }
+            , null, 1); 
       });
   }
   
@@ -229,6 +251,8 @@ public class SimpleAllocatorTest extends TestClass {
     }
   }
 
+  //TODO: tests for splitbrain being called
+  
   @Test
   public void shouldBalanceRandomness() throws InterruptedException {
     Random rand = new Random();
