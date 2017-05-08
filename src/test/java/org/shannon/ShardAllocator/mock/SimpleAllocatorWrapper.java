@@ -37,7 +37,9 @@ public class SimpleAllocatorWrapper implements Closeable {
         dist.asMap(),
         () -> { 
           discoveryCount.incrementAndGet();
-          return dist.asMap();
+          //Assumption: nodes in the distribution but not in nodes will fall off as they are unreachable.
+          this.dist.keySet().retainAll(this.nodes);
+          return this.dist.asMap();
         }, (relocation) -> {
           synchronized(sync) {
             relocate(relocation);
@@ -52,11 +54,11 @@ public class SimpleAllocatorWrapper implements Closeable {
   private Collection<ShardRelocation<Integer, Integer>> resolveSplit(Integer shard, HashSet<Integer> myNodes
       , TreeMultimap<Integer, Integer> counts) {
     ArrayList<ShardRelocation<Integer, Integer>> moves = new ArrayList<ShardRelocation<Integer, Integer>>();
+    int movesToGo = myNodes.size() - 1;
     for (Collection<Integer> mostNodes : counts.asMap().descendingMap().values()) {
       for (Integer node : Sets.union((Set<Integer>)(mostNodes), myNodes)) {
-        myNodes.remove(node);
         moves.add(new ShardRelocation<Integer, Integer>(node, null, shard));
-        if (myNodes.size() == 1) {
+        if (--movesToGo == 0) {
           return moves;
         }
       }
@@ -81,7 +83,6 @@ public class SimpleAllocatorWrapper implements Closeable {
 
   public void notifyNodeChange(Collection<Integer> nodes) {
     this.nodes = nodes;
-    dist.keySet().retainAll(nodes);
     allocator.notifyNodesChange(nodes);    
   }
   

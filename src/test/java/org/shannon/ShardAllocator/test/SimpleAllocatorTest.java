@@ -268,7 +268,7 @@ public class SimpleAllocatorTest extends TestClass {
             w.notifyNodeChange(integers(0, rand.nextInt(100) + 1));
             break;
           case 1:
-            w.notifyShardChange(integers(0, rand.nextInt(10000) + 1));
+            w.notifyShardChange(integers(0, rand.nextInt(100) + 1));
             break;
           case 2:
             ArrayList<Integer> counts = new ArrayList<Integer>();
@@ -278,7 +278,7 @@ public class SimpleAllocatorTest extends TestClass {
             w.notifyDistributionChange(dist(counts.toArray(new Integer[0])));
             break;
         }
-        w.awaitRebalance(); //Looking at a split brain resolution
+        w.awaitRebalance();
         w.isBalanced();
       }
     } finally {

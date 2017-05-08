@@ -33,9 +33,13 @@ import com.google.common.collect.TreeMultimap;
 
 /**
  * Allocates nodes based on an algorithm that attempts to make the fewest number of moves and assuming equal weight of every
- * shard.
+ * Shard.
  * 
  * Internally, use of HashSet is used, so the objects must implement reasonable hashCode and equals functions.
+ * 
+ * Assumption: It is assumed that if a node is not in our nodeUniverse that any distribution we get for it can be forgotten.
+ *   This is further based on the assumption that an unreachable node will release its ownership of a Shard and when it rejoins,
+ *   it will not believe itself to be an owner of any Shard.
  * 
  * @author Shannon
  *
@@ -83,7 +87,7 @@ public final class SimpleAllocator<Node, Shard> implements ShardAllocator<Node, 
   
   @Override
   public void awaitRebalance() {
-    while(!relocationJob.isDone() || balancing) {
+    while(balancing || !relocationJob.isDone()) {
       try {
         relocationJob.get();
       } catch (InterruptedException | CancellationException e) {
@@ -96,12 +100,12 @@ public final class SimpleAllocator<Node, Shard> implements ShardAllocator<Node, 
   }
   
   private synchronized void allocateAsync() {
+    balancing = true;
     if (relocationJob != null) { relocationJob.cancel(true); }
     relocationJob = parentExecutor.submit(() -> {
       ArrayList<Future<?>> futures = new ArrayList<Future<?>>();
       final ConstrainedQueue<ShardRelocation<Node, Shard>> moves = determineMoves();
       if(!moves.isEmpty() && !Thread.interrupted()) {
-        balancing = true;
         ExecutorService threadPool = Executors.newFixedThreadPool(nodeUniverse.size() * maxThreadsPerNode);
         try {
           while (!moves.isEmpty()) {
@@ -190,17 +194,19 @@ public final class SimpleAllocator<Node, Shard> implements ShardAllocator<Node, 
   
   private void removeLeavers(ConstrainedQueue<ShardRelocation<Node, Shard>> moves) {
     HashSet<Node> leavingNodes = new HashSet<Node>();
+    ArrayList<Runnable> actions = new ArrayList<Runnable>();
     for (Map.Entry<Node, HashSet<Shard>> entry : distribution.entrySet()) {
       if (nodeUniverse.contains(entry.getKey())) {
         for (Shard shard : Sets.difference(entry.getValue(), shardUniverse)) {
           moves.add(new ShardRelocation<Node, Shard>(entry.getKey(), null, shard));
-          This causes a concurrent modification Exception. Perform later Collect as callables.
-          distribution.get(entry.getKey()).remove(shard);
+          actions.add(() -> { distribution.get(entry.getKey()).remove(shard); });
         }
       } else {
         leavingNodes.add(entry.getKey());
       }
     }
+    actions.forEach((action) -> { action.run(); });
+    //Assuming that the nodes left. A node should not be able to join and have ownership of a Shard without going through this.
     leavingNodes.forEach((node) -> { distribution.remove(node); });
   }
   
@@ -216,9 +222,9 @@ public final class SimpleAllocator<Node, Shard> implements ShardAllocator<Node, 
     }
     
     for(Map.Entry<Shard, Collection<Node>> entry : nodesByShard.asMap().entrySet()) {
-      if (entry.getValue().size() < 1) {
+      if (entry.getValue().size() > 1) {
         Collection<ShardRelocation<Node, Shard>> newMoves = 
-            splitBrainResolver.resolve(entry.getKey(), (HashSet<Node>)entry.getValue(), nodesByCount);
+            splitBrainResolver.resolve(entry.getKey(), new HashSet<Node>(entry.getValue()), nodesByCount);
         if (newMoves != null && !newMoves.isEmpty()) {
           haveNewMoves = true;
           moves.addAll(newMoves);
