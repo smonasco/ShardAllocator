@@ -100,8 +100,9 @@ public class SimpleAllocatorWrapper implements Closeable {
       double mean = (double)shards.size() / (double) nodes.size();
       int fmean = (int) Math.floor(mean);
       int cmean = (int) Math.ceil(mean);
+      int unemptyNodes = Math.min(nodes.size(), shards.size());
       
-      assertEquals("Should have allocations for every node", Math.min(nodes.size(), shards.size()), dist.keySet().size());
+      assertEquals("Should have allocations for every node", unemptyNodes, dist.keySet().size());
       int cmeanCount = 0;
       int fmeanCount = 0;
       for(Collection<Integer> shards : dist.asMap().values()) {
@@ -113,7 +114,7 @@ public class SimpleAllocatorWrapper implements Closeable {
         }
       }
       assertEquals("Should have remainder count of over allocated", shards.size() % nodes.size(), cmeanCount);
-      assertEquals("All others should have the floor of the mean", nodes.size() - cmeanCount, fmeanCount);
+      assertEquals("All others should have the floor of the mean", unemptyNodes - cmeanCount, fmeanCount);
     } catch(Throwable e) {
       System.out.println(e);
       throw e;

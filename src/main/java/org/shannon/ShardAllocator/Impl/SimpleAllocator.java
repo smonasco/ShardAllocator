@@ -164,7 +164,7 @@ public final class SimpleAllocator<Node, Shard> implements ShardAllocator<Node, 
     if (fromEntry != null) {
       nodesByCount.remove(fromEntry.getKey(), fromEntry.getValue());
       nodesByCount.put(fromEntry.getKey() - 1, fromEntry.getValue());
-      distribution.remove(fromEntry.getValue(), shard);
+      distribution.get(fromEntry.getValue()).remove(shard);
     }
     nodesByCount.remove(leastEntry.getKey(), leastEntry.getValue());
     nodesByCount.put(leastEntry.getKey() + 1, leastEntry.getValue());
