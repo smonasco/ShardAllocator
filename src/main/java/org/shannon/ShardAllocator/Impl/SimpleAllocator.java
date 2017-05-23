@@ -1,5 +1,6 @@
 package org.shannon.ShardAllocator.Impl;
 
+import java.lang.invoke.MethodHandles;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -24,6 +25,8 @@ import org.shannon.ShardAllocator.ShardAllocator;
 import org.shannon.ShardAllocator.ShardRelocation;
 import org.shannon.ShardAllocator.ShardRelocator;
 import org.shannon.ShardAllocator.SplitBrainResolver;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableSet;
@@ -47,6 +50,7 @@ import com.google.common.collect.TreeMultimap;
  * @param <Shard>
  */
 public final class SimpleAllocator<Node, Shard> implements ShardAllocator<Node, Shard> {
+  private final static Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
   private ImmutableSet<Node> nodeUniverse;
   private ImmutableSet<Shard> shardUniverse;
   private Map<Node, HashSet<Shard>> distribution;
@@ -93,8 +97,7 @@ public final class SimpleAllocator<Node, Shard> implements ShardAllocator<Node, 
       } catch (InterruptedException | CancellationException e) {
         //Don't care just check again
       } catch (ExecutionException e) {
-        // TODO Should never occur but record nonetheless
-        e.printStackTrace();
+        logger.error("Caught an ExecutionException trying to relocate. This should not happen.", e);
       }
     }
   }
@@ -115,15 +118,14 @@ public final class SimpleAllocator<Node, Shard> implements ShardAllocator<Node, 
           for(Future<?> future : futures) {
             future.get();            
           }
-        } catch(Exception e) {
-          //TODO: logging, log4j?
+        } catch(Throwable e) {
+          logger.error("SimpleAllocator.allocateAsync() - Caught Expection while trying to move shards.", e);
           threadPool.shutdownNow();
           //TODO: is 5 minutes good for everyone?  probably OK; we'll loop until we're good.
           try {
             threadPool.awaitTermination(5, TimeUnit.MINUTES);
           } catch (InterruptedException e1) {
-            // Probably don't care too much
-            // TODO logging, log4j?
+            logger.warn("SimpleAllocator.allocateAsync() - Captured InterruptExcpetion", e1);
           }
         }
         discoverDistribution();
@@ -281,7 +283,7 @@ public final class SimpleAllocator<Node, Shard> implements ShardAllocator<Node, 
       try {
         relocationJob.get();
       } catch (InterruptedException | ExecutionException | CancellationException e) {
-        //TODO: logging and assume done.
+        logger.info("SimpleAllocator.close - Exception caught closing. Assuming all is done.", e);
       }
     }
   }

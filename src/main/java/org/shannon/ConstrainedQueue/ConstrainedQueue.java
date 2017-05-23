@@ -1,6 +1,7 @@
 package org.shannon.ConstrainedQueue;
 
 import java.io.Closeable;
+import java.lang.invoke.MethodHandles;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
@@ -8,6 +9,9 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * A ConstrainedQueue is a queue with constraints around what can be released downstream.
@@ -33,7 +37,7 @@ import java.util.concurrent.TimeoutException;
  * @param <T>
  */
 public class ConstrainedQueue<T> implements BlockingQueue<T>, Closeable {
-  
+  private final static Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
   private final BlockingQueue<T> delegate;
   private final Constrainer<T> constrainer;
   private final LinkedBlockingQueue<T> trafficJam = new LinkedBlockingQueue<T>();
@@ -53,7 +57,7 @@ public class ConstrainedQueue<T> implements BlockingQueue<T>, Closeable {
           if (!open) { break; }
           delegate.put(trafficJam.take());
         } catch (InterruptedException e) {
-           //TODO: log
+          logger.error("ConstrainedQueue.jamClearer - Interrupted while trying to clear jams", e);
           break;
         }
       }
