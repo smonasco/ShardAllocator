@@ -3,20 +3,29 @@ package org.shannon.ShardAllocator;
 import com.google.common.base.Preconditions;
 
 /**
- * This describe the relocation that needs to happen.
+ * This describes the relocation that needs to happen.
  * 
  * We have a shard that needs to move, be removed (toNode will be null) or start being worked (fromNode will be null)
  * 
  * @author Shannon
  *
- * @param <Node>
- * @param <Shard>
+ * @param <Node>    That which controls or has ownership of Shards
+ * @param <Shard>   Some fragment of the whole which needs controlling.
  */
 public class ShardRelocation<Node, Shard> {
   private final Node fromNode;
   private final Node toNode;
   private final Shard shard;
-  
+
+  /**
+   * This describes the relocation that needs to happen.
+   *
+   * We have a shard that needs to move, be removed (toNode will be null) or start being worked (fromNode will be null)
+   *
+   * @param fromNode  Node that needs to release control if any.
+   * @param toNode    Node that needs to receive control if any.
+   * @param shard     Shard that needs to have its ownership changed.
+   */
   public ShardRelocation(Node fromNode, Node toNode, Shard shard) {
     Preconditions.checkNotNull(shard, "Must have a shard to move.");
     this.fromNode = fromNode;
@@ -67,13 +76,13 @@ public class ShardRelocation<Node, Shard> {
         && o.shard.equals(shard);
   }
   
-  private int hc(Object o) {
+  private int hashCode(Object o) {
     return o == null ? 0 : o.hashCode();
   }
   
   @Override
   public int hashCode() {
-    return hc(fromNode) ^ hc(toNode) ^ shard.hashCode();
+    return hashCode(fromNode) ^ hashCode(toNode) ^ shard.hashCode();
   }
   
   private String toStringJSON(Object o) {

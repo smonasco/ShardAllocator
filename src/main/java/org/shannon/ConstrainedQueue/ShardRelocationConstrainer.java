@@ -12,11 +12,24 @@ import java.util.function.Function;
 import org.apache.commons.collections4.multimap.HashSetValuedHashMap;
 import org.shannon.ShardAllocator.ShardRelocation;
 
+/**
+ * This should constrain a ConstrainedQueue to only allow maxThreadsPerNode threads to be
+ * affiliated with any given node whether that node be a receiver or releaser of a move.
+ *
+ * @param <Node>    That which controls or has ownership of Shards
+ * @param <Shard>   Some fragment of the whole which needs controlling.
+ */
 public class ShardRelocationConstrainer<Node, Shard> implements Constrainer<ShardRelocation<Node, Shard>> {
   private HashSetValuedHashMap<Node, ShardRelocation<Node, Shard>> waitLists = new HashSetValuedHashMap<Node, ShardRelocation<Node, Shard>>();
   private HashMap<Node, Integer> activeCounts = new HashMap<Node, Integer>();
   private final int maxThreadsPerNode;
-  
+
+  /**
+   * This should constrain a ConstrainedQueue to only allow maxThreadsPerNode threads to be
+   * affiliated with any given node whether that node be a receiver or releaser of a move.
+   *
+   * @param maxThreadsPerNode   Maximum number of threads that can be affiliated with any given node.
+   */
   public ShardRelocationConstrainer(int maxThreadsPerNode) {
     this.maxThreadsPerNode = maxThreadsPerNode;
   }

@@ -9,6 +9,7 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import com.google.common.collect.ImmutableSet;
 import org.apache.commons.collections4.multimap.HashSetValuedHashMap;
 import org.shannon.ShardAllocator.ShardRelocation;
 import org.shannon.ShardAllocator.Impl.SimpleAllocator;
@@ -32,8 +33,8 @@ public class SimpleAllocatorWrapper implements Closeable {
     this.nodes = nodes;
     this.shards = shards;
     allocator = new SimpleAllocator<Integer, Integer>(
-        nodes,
-        shards,
+        ImmutableSet.copyOf(nodes),
+        ImmutableSet.copyOf(shards),
         dist.asMap(),
         () -> { 
           discoveryCount.incrementAndGet();

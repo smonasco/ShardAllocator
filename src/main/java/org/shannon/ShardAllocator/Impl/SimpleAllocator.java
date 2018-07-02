@@ -1,13 +1,8 @@
 package org.shannon.ShardAllocator.Impl;
 
 import java.lang.invoke.MethodHandles;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
+import java.util.*;
 import java.util.Map.Entry;
-import java.util.SortedSet;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -46,8 +41,8 @@ import com.google.common.collect.TreeMultimap;
  * 
  * @author Shannon
  *
- * @param <Node>
- * @param <Shard>
+ * @param <Node>    That which controls or has ownership of Shards
+ * @param <Shard>   Some fragment of the whole which needs controlling.
  */
 public final class SimpleAllocator<Node, Shard> implements ShardAllocator<Node, Shard> {
   private final static Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
@@ -63,7 +58,7 @@ public final class SimpleAllocator<Node, Shard> implements ShardAllocator<Node, 
   private boolean balancing = false;
   
   //TODO: This is too cumbersome. We can go multiple ways. Builder pattern or globbing params into objects
-  public SimpleAllocator(Collection<Node> nodes, Collection<Shard> shards, Map<Node, Collection<Shard>> distribution
+  public SimpleAllocator(ImmutableSet<Node> nodes, ImmutableSet<Shard> shards, Map<Node, Collection<Shard>> distribution
       , DistributionDiscoverer<Node, Shard> distDiscoverer, ShardRelocator<Node, Shard> relocator
       , SplitBrainResolver<Node, Shard> splitBrainResolver, int relocatingThreadsPerNode) {
     Preconditions.checkArgument(nodes != null  && !nodes.isEmpty(), "If you have no nodes, shards cannot be allocated");

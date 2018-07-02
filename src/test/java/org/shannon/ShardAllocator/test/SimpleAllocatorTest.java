@@ -1,20 +1,19 @@
 package org.shannon.ShardAllocator.test;
 
+import com.google.common.collect.ImmutableSet;
+import lombok.val;
 import org.apache.commons.collections4.multimap.HashSetValuedHashMap;
 import org.junit.Test;
 import org.shannon.ShardAllocator.Impl.SimpleAllocator;
+import org.shannon.ShardAllocator.ShardRelocation;
 import org.shannon.ShardAllocator.mock.SimpleAllocatorWrapper;
 import org.shannon.util.TestClass;
 
 import static org.junit.Assert.*;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Random;
+import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 public class SimpleAllocatorTest extends TestClass {
   
@@ -88,7 +87,7 @@ public class SimpleAllocatorTest extends TestClass {
             , null, 1); 
       });
   }
-  
+
   @Test
   public void initialBalancingHappens() throws InterruptedException {
     SimpleAllocatorWrapper w = new SimpleAllocatorWrapper(integers(0,2), integers(0,5)
